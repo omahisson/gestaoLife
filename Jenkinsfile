@@ -2,15 +2,16 @@ pipeline {
   agent any
 
   options {
+    skipDefaultCheckout(true)
     disableConcurrentBuilds()
-    buildDiscarder(logRotator(numToKeepStr: '5'))
-    timeout(time: 15, unit: 'MINUTES')
+    buildDiscarder(logRotator(daysToKeepStr: '14', numToKeepStr: '3'))
+    timeout(time: 30, unit: 'MINUTES')
     timestamps()
   }
 
   environment {
     CI = 'true'
-    NODE_OPTIONS = '--max-old-space-size=384'
+    NODE_OPTIONS = '--max-old-space-size=256'
     PATH = '/usr/local/bin:/usr/bin:/bin'
   }
 

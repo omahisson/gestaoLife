@@ -19,7 +19,7 @@ PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
 ReadWritePaths=/var/lib/gestaolife
-MemoryMax=192M
+MemoryMax=128M
 
 [Install]
 WantedBy=multi-user.target

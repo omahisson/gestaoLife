@@ -1,6 +1,8 @@
 # Implantação do Gestão Life com Jenkins no Debian 13
 
-Este procedimento instala o frontend no Nginx, mantém o JSON Server como um serviço do `systemd` e usa o Jenkins para validar e implantar a aplicação. O banco persistente fica em `/var/lib/gestaolife/db.json` e não é sobrescrito nos próximos builds.
+Este procedimento foi dimensionado especificamente para a VPS **1-1-10**, com 1 vCore, 1 GB de RAM e SSD NVMe de 10 GB. Ele instala o frontend no Nginx, mantém o JSON Server como um serviço do `systemd` e usa o Jenkins para validar e implantar a aplicação. O banco persistente fica em `/var/lib/gestaolife/db.json` e não é sobrescrito nos próximos builds.
+
+Por causa dos recursos limitados, a configuração usa apenas um executor, limita o heap do Jenkins e do Node.js, conserva somente três builds e não utiliza Docker. Durante uma compilação, a aplicação pode responder um pouco mais devagar.
 
 ## 1. Acessar e conferir a VPS
 
@@ -10,21 +12,32 @@ Na sua máquina:
 ssh root@74.208.102.177
 ```
 
-Na VPS:
+Na VPS, confirme se os recursos correspondem ao plano contratado:
 
 ```bash
 free -h
+swapon --show
+nproc
 df -h
 ```
 
-Se houver menos de 2 GB de memória e a VPS ainda não tiver swap, crie 1 GB:
+Essa VPS precisa de swap para absorver o pico simultâneo do Jenkins e do Node.js. Se `swapon --show` não apresentar nenhum resultado, crie 1 GB:
 
 ```bash
 fallocate -l 1G /swapfile
 chmod 600 /swapfile
 mkswap /swapfile
 swapon /swapfile
-echo '/swapfile none swap sw 0 0' >> /etc/fstab
+grep -q '^/swapfile ' /etc/fstab || echo '/swapfile none swap sw 0 0' >> /etc/fstab
+echo 'vm.swappiness=20' > /etc/sysctl.d/99-gestaolife.conf
+sysctl --system
+```
+
+Confirme:
+
+```bash
+free -h
+swapon --show
 ```
 
 ## 2. Instalar Node.js, Nginx e utilitários
@@ -33,8 +46,9 @@ O Node.js do Debian 13 atende ao requisito do Vite 8.
 
 ```bash
 apt update
-apt install -y ca-certificates curl gnupg git nginx nodejs npm rsync openssh-client sudo
+apt install -y --no-install-recommends ca-certificates curl gnupg git nginx nodejs npm rsync openssh-client sudo
 npm install -g pnpm@11.19.0
+npm cache clean --force
 node --version
 pnpm --version
 ```
@@ -62,8 +76,9 @@ Insira:
 
 ```ini
 [Service]
-Environment="JAVA_OPTS=-Djava.awt.headless=true -Xms128m -Xmx384m -XX:+UseSerialGC"
+Environment="JAVA_OPTS=-Djava.awt.headless=true -Xms64m -Xmx256m -XX:+UseSerialGC"
 Environment="JENKINS_OPTS=--httpListenAddress=127.0.0.1"
+Nice=5
 ```
 
 Depois aplique:
@@ -88,7 +103,7 @@ Acesse `http://localhost:8080`. Para obter a senha inicial, execute na VPS:
 cat /var/lib/jenkins/secrets/initialAdminPassword
 ```
 
-Instale somente os complementos necessários: **Pipeline**, **Git**, **Credentials** e **SSH Credentials**. Em **Manage Jenkins > Nodes > Built-In Node > Configure**, mantenha apenas **1 executor**.
+Instale somente os complementos necessários: **Pipeline**, **Git**, **Credentials** e **SSH Credentials**. Evite a instalação indiscriminada dos complementos sugeridos, pois eles aumentam o consumo de memória e disco. Em **Manage Jenkins > Nodes > Built-In Node > Configure**, mantenha apenas **1 executor**.
 
 ## 5. Dar ao Jenkins acesso somente de leitura ao GitHub
 
@@ -129,13 +144,14 @@ Confirme no GitHub que `Jenkinsfile` e a pasta `infra` aparecem na branch `main`
 Faça um clone temporário para obter os arquivos administrativos:
 
 ```bash
-sudo -u jenkins env GIT_SSH_COMMAND='ssh -i /var/lib/jenkins/.ssh/gestaolife -o IdentitiesOnly=yes' git clone git@github.com:omahisson/gestaoLife.git /var/lib/jenkins/gestaoLife-bootstrap
+sudo -u jenkins env GIT_SSH_COMMAND='ssh -i /var/lib/jenkins/.ssh/gestaolife -o IdentitiesOnly=yes' git clone --depth 1 git@github.com:omahisson/gestaoLife.git /var/lib/jenkins/gestaoLife-bootstrap
 useradd --system --home-dir /var/lib/gestaolife --create-home --shell /usr/sbin/nologin gestaolife
 install -m 0755 /var/lib/jenkins/gestaoLife-bootstrap/infra/deploy-gestaolife /usr/local/sbin/deploy-gestaolife
 install -m 0644 /var/lib/jenkins/gestaoLife-bootstrap/infra/gestaolife-api.service /etc/systemd/system/gestaolife-api.service
 install -m 0644 /var/lib/jenkins/gestaoLife-bootstrap/infra/nginx-gestaolife.conf /etc/nginx/sites-available/gestaolife
 ln -s /etc/nginx/sites-available/gestaolife /etc/nginx/sites-enabled/gestaolife
 rm -f /etc/nginx/sites-enabled/default
+rm -rf /var/lib/jenkins/gestaoLife-bootstrap
 ```
 
 Autorize o Jenkins a executar somente o implantador controlado pelo administrador:
@@ -174,6 +190,8 @@ systemctl status jenkins gestaolife-api nginx --no-pager
 curl -I http://127.0.0.1:3001/usuarios
 curl -I http://74.208.102.177
 journalctl -u gestaolife-api -n 50 --no-pager
+free -h
+df -h
 ```
 
 A aplicação ficará disponível em `http://74.208.102.177`. No firewall da provedora, deixe abertas somente as portas 22 e 80 neste primeiro momento. Não abra 3001 nem 8080.
@@ -192,6 +210,22 @@ Para acompanhar os serviços:
 journalctl -u jenkins -f
 journalctl -u gestaolife-api -f
 ```
+
+Com apenas 10 GB de disco, confira o consumo pelo menos uma vez por mês:
+
+```bash
+du -sh /var/lib/jenkins /var/lib/gestaolife /opt/gestaolife /var/cache/apt
+sudo -u jenkins pnpm store prune
+journalctl --vacuum-size=100M
+apt clean
+df -h
+```
+
+Não apague `/var/lib/gestaolife`: esse diretório contém o banco utilizado pela aplicação.
+
+## Por que não usar Docker nesta VPS
+
+Docker ajudaria a padronizar e isolar os serviços, mas não reduziria o consumo do Jenkins ou do processo de compilação. Neste servidor, as imagens, camadas, volumes e cache de build também competiriam pelos 10 GB de disco. Para este plano, Nginx e JSON Server como serviços nativos são mais simples e econômicos. Se futuramente a VPS tiver ao menos 2 vCPUs, 4 GB de RAM e mais espaço em disco, a migração para Docker Compose passa a ser vantajosa.
 
 ## Limite de segurança da versão 1.0
 
