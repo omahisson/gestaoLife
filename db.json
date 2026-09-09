@@ -1,0 +1,27 @@
+{
+  "versao": "1.0.0",
+  "usuarios": [
+    {
+      "id": "usuario-admin",
+      "login": "admin",
+      "senhaHash": "5e5eaaedee30d405b4bcd0282a3775492e88b7847051a6e7b5074a072d026c5b",
+      "nome": "Administrador",
+      "perfilAcesso": "administrador",
+      "ativo": true,
+      "criadoEm": "2026-09-08T03:00:00.000Z"
+    }
+  ],
+  "dadosUsuarios": [
+    {
+      "id": "usuario-admin",
+      "usuarioId": "usuario-admin",
+      "diaFechamento": 30,
+      "cartoes": [],
+      "despesas": [],
+      "despesasPrevistas": [],
+      "notas": [],
+      "metas": []
+    }
+  ],
+  "$schema": "./node_modules/json-server/schema.json"
+}

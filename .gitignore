@@ -1,0 +1,18 @@
+node_modules/
+.pnpm-store/
+dist/
+build/
+.cache/
+.env*
+.vite/
+vite.config.*.timestamp-*
+*.tsbuildinfo
+*-debug.log*
+logs/
+*.log
+.claude-replay.*
+.tmp-*
+
+# Estado local de ferramentas de desenvolvimento, sem vínculo com o código-fonte.
+/.plugins/
+/.opencode-skills/

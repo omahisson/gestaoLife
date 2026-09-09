@@ -1,0 +1,25 @@
+[Unit]
+Description=API do Gestão Life
+After=network.target
+
+[Service]
+Type=simple
+User=gestaolife
+Group=gestaolife
+WorkingDirectory=/opt/gestaolife
+Environment=NODE_ENV=production
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+ExecStart=/opt/gestaolife/node_modules/.bin/json-server /var/lib/gestaolife/db.json --port 3001 --host 127.0.0.1
+Restart=on-failure
+RestartSec=3
+UMask=0077
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/gestaolife
+MemoryMax=192M
+
+[Install]
+WantedBy=multi-user.target
