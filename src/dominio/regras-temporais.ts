@@ -97,7 +97,12 @@ function criarDataComDiaLimitado(ano: number, mes: number, dia: number): Date {
 export function obterPeriodoDoCicloFinanceiro(
   diaFechamento: number,
   referencia = new Date(),
-): { inicio: Date; fim: Date; diasRestantes: number } {
+): {
+  inicio: Date
+  fim: Date
+  diasRestantes: number
+  diasDecorridos: number
+} {
   const hoje = new Date(
     referencia.getFullYear(),
     referencia.getMonth(),
@@ -130,6 +135,10 @@ export function obterPeriodoDoCicloFinanceiro(
     fim,
     diasRestantes: Math.max(
       Math.ceil((fim.getTime() - hoje.getTime()) / 86_400_000),
+      0,
+    ),
+    diasDecorridos: Math.max(
+      Math.floor((hoje.getTime() - inicio.getTime()) / 86_400_000) + 1,
       0,
     ),
   }

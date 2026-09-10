@@ -17,6 +17,7 @@ import {
   ehSemanaAtual,
   formatarDataIso,
   formatarPeriodoDaSemana,
+  obterPeriodoDoCicloFinanceiro,
 } from "../../dominio/regras-temporais"
 
 interface PropriedadesTelaInsights {
@@ -71,6 +72,10 @@ export default function TelaInsights({
   const metasComImpacto = metas.filter(
     (meta) => meta.valorMedio && meta.frequenciaMensal,
   )
+  const periodoDoCiclo = obterPeriodoDoCicloFinanceiro(diaFechamento, HOJE)
+  const inicioDoCiclo = `${periodoDoCiclo.inicio.getDate()} de ${
+    MESES_ABREVIADOS[periodoDoCiclo.inicio.getMonth()]
+  }`
 
   return (
     <div className="flex-1 overflow-y-auto pb-28 bg-[#EEF2F9]">
@@ -119,7 +124,7 @@ export default function TelaInsights({
           <div className="bg-white/80 border border-white/60 rounded-2xl p-4 shadow-sm backdrop-blur-sm">
             <p className="text-[11px] text-gray-600 font-medium mb-2">
               {statusPeriodo === "atual"
-                ? `Gasto de dia ${diaFechamento} até hoje`
+                ? `Gasto de ${inicioDoCiclo} até hoje`
                 : statusPeriodo === "passado"
                   ? `Total em ${MESES_ABREVIADOS[mes.getMonth()]}`
                   : `Previsto para ${MESES_ABREVIADOS[mes.getMonth()]}`}
@@ -129,7 +134,10 @@ export default function TelaInsights({
             </p>
             {statusPeriodo === "atual" && (
               <p className="text-[11px] text-emerald-700 mt-2 font-medium">
-                ↑ {HOJE.getDate()} dias registrados
+                ↑ {periodoDoCiclo.diasDecorridos}{" "}
+                {periodoDoCiclo.diasDecorridos === 1
+                  ? "dia registrado"
+                  : "dias registrados"}
               </p>
             )}
             {statusPeriodo === "passado" && (
@@ -155,7 +163,9 @@ export default function TelaInsights({
             </p>
             {statusPeriodo === "atual" && (
               <p className="text-[11px] text-orange-600 mt-2 font-medium">
-                ↑ {diaFechamento - HOJE.getDate()} dias · detalhes →
+                ↑ {periodoDoCiclo.diasRestantes}{" "}
+                {periodoDoCiclo.diasRestantes === 1 ? "dia" : "dias"} ·{" "}
+                detalhes →
               </p>
             )}
             {statusPeriodo === "passado" && (
@@ -172,7 +182,7 @@ export default function TelaInsights({
             className="w-full bg-white/80 border border-white/60 rounded-2xl p-4 mb-6 text-left shadow-sm hover:bg-white/90 transition-colors backdrop-blur-sm"
           >
             <p className="text-[11px] text-gray-600 font-medium mb-3">
-              Previsão vs realidade até hoje
+              Comparativo da previsão de gastos
             </p>
             <div className="grid grid-cols-2 gap-3 mb-3">
               <div>

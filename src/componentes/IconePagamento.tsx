@@ -24,41 +24,22 @@ export default function IconePagamento({ tipo }: { tipo: TipoPagamento }) {
   if (tipo === "pix") {
     return (
       <div className="w-full h-full flex items-center justify-center text-[#1A56DB]">
-        <svg viewBox="0 0 20 20" width="17" height="17" fill="currentColor">
-          <g transform="translate(10,10)">
-            <rect
-              x="-2.4"
-              y="-7.5"
-              width="4.8"
-              height="6"
-              rx="2.4"
-              transform="rotate(45)"
-            />
-            <rect
-              x="-2.4"
-              y="1.5"
-              width="4.8"
-              height="6"
-              rx="2.4"
-              transform="rotate(45)"
-            />
-            <rect
-              x="-2.4"
-              y="-7.5"
-              width="4.8"
-              height="6"
-              rx="2.4"
-              transform="rotate(-45)"
-            />
-            <rect
-              x="-2.4"
-              y="1.5"
-              width="4.8"
-              height="6"
-              rx="2.4"
-              transform="rotate(-45)"
-            />
-          </g>
+        <svg
+          viewBox="0 0 24 24"
+          width="18"
+          height="18"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-label="Pix"
+        >
+          <path d="m7.2 9.8 3.1-3.1a2.4 2.4 0 0 1 3.4 0l3.1 3.1" />
+          <path d="m7.2 14.2 3.1 3.1a2.4 2.4 0 0 0 3.4 0l3.1-3.1" />
+          <path d="m9.8 7.2-3.1 3.1a2.4 2.4 0 0 0 0 3.4l3.1 3.1" />
+          <path d="m14.2 7.2 3.1 3.1a2.4 2.4 0 0 1 0 3.4l-3.1 3.1" />
+          <path d="M9 12h6" />
         </svg>
       </div>
     )

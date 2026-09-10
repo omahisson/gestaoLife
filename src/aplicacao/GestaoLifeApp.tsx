@@ -140,6 +140,7 @@ export default function GestaoLifeApp({
   const [modalDespesaAberto, definirModalDespesaAberto] = useState(false)
   const [nomeDespesa, definirNomeDespesa] = useState("")
   const [valorDespesa, definirValorDespesa] = useState("")
+  const [dataDespesa, definirDataDespesa] = useState(formatarDataIso(HOJE))
   const [pagamento, definirPagamento] = useState<TipoPagamento>("pix")
   const [cartaoSelecionado, definirCartaoSelecionado] = useState("")
   const [recorrencia, definirRecorrencia] = useState<TipoRecorrencia>("avulsa")
@@ -670,17 +671,27 @@ export default function GestaoLifeApp({
   }
 
   // ── Helpers de notas/tarefas ──────────────────────────────────────────
-  function tarefasParaData(
-    dataStr: string,
+  function tarefasParaIntervalo(
+    dataInicial: string,
+    dataFinal = dataInicial,
   ): Array<{ bloco: BlocoNota; nota: Nota }> {
     const result: Array<{ bloco: BlocoNota; nota: Nota }> = []
     notas.forEach((nota) => {
       nota.blocos.forEach((bloco) => {
-        if (bloco.tipo === "checkbox" && bloco.data === dataStr)
+        if (
+          bloco.tipo === "checkbox" &&
+          bloco.data &&
+          bloco.data >= dataInicial &&
+          bloco.data <= dataFinal
+        )
           result.push({ bloco, nota })
       })
     })
-    return result
+    return result.sort((a, b) =>
+      `${a.bloco.data ?? ""}T${a.bloco.hora ?? ""}`.localeCompare(
+        `${b.bloco.data ?? ""}T${b.bloco.hora ?? ""}`,
+      ),
+    )
   }
 
   function contarTarefasPorData(dataStr: string): number {
@@ -876,7 +887,7 @@ export default function GestaoLifeApp({
         id: did,
         nome: nomeDespesa.trim(),
         valor: v,
-        data: formatarDataIso(diaSelecionado),
+        data: dataDespesa,
         pagamento,
         cartaoNome: pagamento === "cartao" ? cartaoSelecionado : undefined,
         recorrencia,
@@ -905,6 +916,7 @@ export default function GestaoLifeApp({
   }
   function abrirModal() {
     definirAba("inicio")
+    definirDataDespesa(formatarDataIso(diaSelecionado))
     definirModalDespesaAberto(true)
   }
 
@@ -925,15 +937,23 @@ export default function GestaoLifeApp({
   // ── Diferença previsão vs realidade ────────────────────────────────────
   const diferencaPrevisao =
     statusPeriodo === "atual" ? gastosDoMesInsights - previsaoAteHoje : null
-  const dataTarefasSelecionada =
+  const dataInicialTarefasSelecionadas =
     visao === "semanal"
       ? formatarDataIso(diaSelecionado)
-      : inicioIntervalo && !fimIntervalo
+      : inicioIntervalo
         ? formatarDataIso(inicioIntervalo)
         : null
-  const tarefasDaDataSelecionada = dataTarefasSelecionada
-    ? tarefasParaData(dataTarefasSelecionada)
+  const dataFinalTarefasSelecionadas =
+    visao === "mensal" && fimIntervalo
+      ? formatarDataIso(fimIntervalo)
+      : dataInicialTarefasSelecionadas
+  const tarefasDaDataSelecionada = dataInicialTarefasSelecionadas
+    ? tarefasParaIntervalo(
+        dataInicialTarefasSelecionadas,
+        dataFinalTarefasSelecionadas ?? dataInicialTarefasSelecionadas,
+      )
     : []
+  const dataDaNovaDespesa = new Date(`${dataDespesa}T12:00:00`)
 
   // ── Render ─────────────────────────────────────────────────────────────
   if (!dadosCarregados) {
@@ -1093,7 +1113,8 @@ export default function GestaoLifeApp({
 
         {aba === "inicio" && (
           <PainelTarefas
-            dataSelecionada={dataTarefasSelecionada}
+            dataSelecionada={dataInicialTarefasSelecionadas}
+            dataFinalSelecionada={dataFinalTarefasSelecionadas}
             tarefas={tarefasDaDataSelecionada}
             aoAlternarTarefa={alternarBlocoDoCalendario}
             aoAbrirNota={abrirNotaDoCalendario}
@@ -1138,12 +1159,24 @@ export default function GestaoLifeApp({
                 >
                   <IconeFechar />
                 </button>
-                <button
-                  onClick={() => excluirMeta(metaAberta.id)}
-                  className="text-xs text-red-600 hover:text-red-600 font-semibold transition-colors px-2 py-1 rounded-lg hover:bg-red-50"
-                >
-                  Excluir
-                </button>
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => {
+                      const metaSelecionada = metaAberta
+                      definirMetaAberta(null)
+                      abrirEditarMeta(metaSelecionada)
+                    }}
+                    className="flex items-center gap-1 text-xs text-[#1A56DB] font-semibold transition-colors px-2 py-1.5 rounded-lg hover:bg-blue-50"
+                  >
+                    <IconeEditar /> Editar
+                  </button>
+                  <button
+                    onClick={() => excluirMeta(metaAberta.id)}
+                    className="text-xs text-red-600 hover:text-red-600 font-semibold transition-colors px-2 py-1.5 rounded-lg hover:bg-red-50"
+                  >
+                    Excluir
+                  </button>
+                </div>
               </div>
 
               <p className="text-xs text-gray-600 font-semibold uppercase tracking-widest mb-2">
@@ -2455,23 +2488,19 @@ export default function GestaoLifeApp({
               <h2 className="text-base font-bold text-gray-950 text-center mb-1">
                 Despesa relacionada a uma meta
               </h2>
-              <p className="text-sm text-gray-500 text-center mb-2">
+              <p className="text-sm text-gray-500 text-center mb-6">
                 Esta despesa está vinculada à sua meta{" "}
                 <strong className="text-gray-900">
                   "{informacoesQuebraMeta.meta.nome}"
                 </strong>
                 .
               </p>
-              <p className="text-sm text-gray-500 text-center mb-6">
-                Isso representa uma quebra? Reiniciar o contador vai zerar o
-                tempo acumulado.
-              </p>
               <div className="space-y-2">
                 <button
                   onClick={() => reiniciarMeta(informacoesQuebraMeta.meta.id)}
                   className="w-full py-3 bg-black text-white font-semibold rounded-2xl text-sm hover:bg-gray-800 transition-colors"
                 >
-                  Registrar quebra e reiniciar meta
+                  Registrar a quebra da meta e reiniciá-la.
                 </button>
                 <button
                   onClick={() => definirInformacoesQuebraMeta(null)}
@@ -2505,11 +2534,23 @@ export default function GestaoLifeApp({
                   <h2 className="text-base font-semibold text-gray-900">
                     Nova despesa
                   </h2>
-                  <p className="text-xs text-gray-600">
-                    {DIAS_SEMANA_ABREVIADOS[diaSelecionado.getDay()]},{" "}
-                    {diaSelecionado.getDate()} de{" "}
-                    {MESES_POR_EXTENSO[diaSelecionado.getMonth()]}
-                  </p>
+                  <label className="relative mt-0.5 inline-flex cursor-pointer items-center gap-1 rounded-lg px-1.5 py-0.5 text-xs text-[#1A56DB] transition-colors hover:bg-blue-50">
+                    <span>
+                      {DIAS_SEMANA_ABREVIADOS[dataDaNovaDespesa.getDay()]},{" "}
+                      {dataDaNovaDespesa.getDate()} de{" "}
+                      {MESES_POR_EXTENSO[dataDaNovaDespesa.getMonth()]}
+                    </span>
+                    <IconeEditar />
+                    <input
+                      type="date"
+                      value={dataDespesa}
+                      onChange={(e) => {
+                        if (e.target.value) definirDataDespesa(e.target.value)
+                      }}
+                      aria-label="Data da despesa"
+                      className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+                    />
+                  </label>
                 </div>
                 <button
                   onClick={salvarDespesa}
@@ -2947,7 +2988,7 @@ export default function GestaoLifeApp({
                 </button>
                 <div className="text-center">
                   <h2 className="text-base font-semibold text-gray-900">
-                    Previsão vs Realidade
+                    Comparativo da previsão de gastos
                   </h2>
                   <p className="text-xs text-gray-600">
                     {MESES_POR_EXTENSO[mesInsights.getMonth()]} · até hoje, dia{" "}

@@ -310,7 +310,14 @@ export default function TelaPerfil({
                     {cartao}
                   </span>
                   <button
-                    onClick={() => aoRemoverCartao(cartao)}
+                    onClick={() => {
+                      if (
+                        window.confirm(
+                          `Excluir o cartão "${cartao}"? Esta ação não pode ser desfeita.`,
+                        )
+                      )
+                        aoRemoverCartao(cartao)
+                    }}
                     aria-label="Remover cartão"
                     className="text-gray-500 hover:text-red-500 transition-colors p-2.5 rounded-xl hover:bg-red-50"
                   >
@@ -324,7 +331,14 @@ export default function TelaPerfil({
 
         <button
           type="button"
-          onClick={aoSair}
+          onClick={() => {
+            if (
+              window.confirm(
+                "Sair da conta? Você precisará entrar novamente para acessar seus dados.",
+              )
+            )
+              aoSair()
+          }}
           className="w-full rounded-2xl border border-red-100 bg-white/80 px-4 py-3.5 text-sm font-semibold text-red-600 shadow-sm transition-colors hover:bg-red-50"
         >
           Sair da conta

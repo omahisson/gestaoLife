@@ -14,6 +14,7 @@ interface TarefaComNota {
 
 interface PropriedadesPainelTarefas {
   dataSelecionada: string | null
+  dataFinalSelecionada?: string | null
   tarefas: TarefaComNota[]
   aoAlternarTarefa: (idNota: number, idBloco: number) => void
   aoAbrirNota: (nota: Nota) => void
@@ -21,6 +22,7 @@ interface PropriedadesPainelTarefas {
 
 export default function PainelTarefas({
   dataSelecionada,
+  dataFinalSelecionada,
   tarefas,
   aoAlternarTarefa,
   aoAbrirNota,
@@ -31,8 +33,17 @@ export default function PainelTarefas({
   const quantidadeConcluida = tarefas.filter(
     ({ bloco }) => bloco.concluida,
   ).length
-  const data = new Date(`${dataSelecionada}T12:00:00`)
-  const rotuloData = `${String(data.getDate()).padStart(2, "0")} de ${MESES_POR_EXTENSO[data.getMonth()]}`
+  function formatarRotuloData(dataTexto: string) {
+    const data = new Date(`${dataTexto}T12:00:00`)
+    return `${String(data.getDate()).padStart(2, "0")} de ${MESES_POR_EXTENSO[data.getMonth()]}`
+  }
+
+  const rotuloData =
+    dataFinalSelecionada && dataFinalSelecionada !== dataSelecionada
+      ? `${formatarRotuloData(dataSelecionada)} a ${formatarRotuloData(dataFinalSelecionada)}`
+      : formatarRotuloData(dataSelecionada)
+  const exibindoIntervalo =
+    !!dataFinalSelecionada && dataFinalSelecionada !== dataSelecionada
 
   return (
     <div
@@ -103,6 +114,12 @@ export default function PainelTarefas({
                   </p>
                   <p className="text-xs text-gray-600 mt-0.5 truncate">
                     {nota.titulo}
+                    {exibindoIntervalo && bloco.data
+                      ? ` · ${new Date(`${bloco.data}T12:00:00`).toLocaleDateString(
+                          "pt-BR",
+                          { day: "2-digit", month: "2-digit" },
+                        )}`
+                      : ""}
                     {bloco.hora ? ` · ${bloco.hora}` : ""}
                   </p>
                 </div>
