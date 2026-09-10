@@ -38,8 +38,8 @@ export default function TelaLogin({ aoAutenticar }: PropriedadesTelaLogin) {
   }
 
   return (
-    <main className="min-h-screen bg-[#EEF2F9] flex items-center justify-center px-5 py-8">
-      <section className="w-full max-w-sm overflow-hidden rounded-[2rem] bg-white shadow-xl shadow-blue-950/10">
+    <main className="min-h-[100dvh] bg-[#EEF2F9] flex items-center justify-center sm:px-5 sm:py-8">
+      <section className="w-full min-h-[100dvh] overflow-hidden bg-white sm:min-h-0 sm:max-w-sm sm:rounded-[2rem] sm:shadow-xl sm:shadow-blue-950/10">
         <div className="relative overflow-hidden bg-[#1A56DB] px-7 pb-10 pt-9 text-white">
           <div className="absolute -right-16 -top-16 h-48 w-48 rounded-full bg-white/10" />
           <div className="absolute -bottom-20 -left-10 h-40 w-40 rounded-full bg-blue-300/15" />

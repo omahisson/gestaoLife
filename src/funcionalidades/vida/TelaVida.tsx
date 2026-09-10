@@ -144,7 +144,7 @@ function ListaDeMetas({
         <h2 className="text-lg font-semibold text-gray-950">Metas</h2>
         <button
           onClick={aoCriar}
-          className="flex items-center gap-1.5 bg-black text-white text-sm font-semibold px-3.5 py-2 rounded-full hover:bg-gray-800 transition-colors"
+          className="flex items-center gap-1.5 bg-[#1A56DB] text-white text-sm font-semibold px-3.5 py-2 rounded-full hover:bg-[#1D4ED8] transition-colors"
         >
           <IconeMais cor="white" /> Nova meta
         </button>

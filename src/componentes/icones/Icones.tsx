@@ -114,11 +114,12 @@ export const IconeConfirmar = () => (
     viewBox="0 0 24 24"
     fill="none"
     stroke="currentColor"
-    strokeWidth="2.2"
+    strokeWidth="2.5"
     strokeLinecap="round"
     strokeLinejoin="round"
+    aria-hidden="true"
   >
-    <polyline points="20 6 9 17 4 12" />
+    <path d="M5 12.5 9.25 17 19 7" />
   </svg>
 )
 

@@ -598,6 +598,15 @@ export default function GestaoLifeApp({
     definirModalNovaMetaAberta(false)
   }
   function excluirMeta(id: number) {
+    const meta = metas.find((item) => item.id === id)
+    if (
+      !window.confirm(
+        `Excluir a meta${
+          meta ? ` "${meta.nome}"` : ""
+        }? Esta ação não pode ser desfeita.`,
+      )
+    )
+      return
     definirMetas((prev) => prev.filter((m) => m.id !== id))
     if (metaAberta?.id === id) definirMetaAberta(null)
   }
@@ -739,6 +748,7 @@ export default function GestaoLifeApp({
     ])
     definirDataNovaNota("")
     definirNovaNotaFixada(false)
+    definirBlocoEditandoData(null)
     definirModalNovaNotaAberta(true)
   }
   function salvarNota() {
@@ -756,7 +766,18 @@ export default function GestaoLifeApp({
         criadaEm: new Date().toISOString(),
       },
     ])
+    definirBlocoEditandoData(null)
     definirModalNovaNotaAberta(false)
+  }
+  function atualizarBlocoDaNovaNota(
+    blocoId: number,
+    alteracoes: Partial<BlocoNota>,
+  ) {
+    definirBlocosNovaNota((blocos) =>
+      blocos.map((bloco) =>
+        bloco.id === blocoId ? { ...bloco, ...alteracoes } : bloco,
+      ),
+    )
   }
   function alternarFixacaoDaNota(notaId: number) {
     definirNotas((prev) =>
@@ -767,6 +788,15 @@ export default function GestaoLifeApp({
     )
   }
   function excluirNota(notaId: number) {
+    const nota = notas.find((item) => item.id === notaId)
+    if (
+      !window.confirm(
+        `Excluir a nota${
+          nota ? ` "${nota.titulo}"` : ""
+        }? Esta ação não pode ser desfeita.`,
+      )
+    )
+      return
     definirNotas((prev) => prev.filter((n) => n.id !== notaId))
     definirNotaAberta(null)
   }
@@ -880,8 +910,10 @@ export default function GestaoLifeApp({
 
   // ── Cartões ────────────────────────────────────────────────────────────
   function adicionarCartao(nome: string) {
-    if (!nome || cartoes.includes(nome)) return
-    definirCartoes((cartoesAtuais) => [...cartoesAtuais, nome])
+    if (!nome) return
+    definirCartoes((cartoesAtuais) =>
+      cartoesAtuais.includes(nome) ? cartoesAtuais : [...cartoesAtuais, nome],
+    )
   }
   function removerCartao(nome: string) {
     definirCartoes((prev) => prev.filter((c) => c !== nome))
@@ -906,7 +938,7 @@ export default function GestaoLifeApp({
   // ── Render ─────────────────────────────────────────────────────────────
   if (!dadosCarregados) {
     return (
-      <main className="min-h-screen bg-[#EEF2F9] flex items-center justify-center px-6">
+      <main className="min-h-[100dvh] bg-[#EEF2F9] flex items-center justify-center px-6">
         <div className="w-full max-w-sm rounded-3xl bg-white p-8 text-center shadow-xl">
           <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-2xl bg-[#1A56DB] font-bold text-white">
             GL
@@ -934,14 +966,14 @@ export default function GestaoLifeApp({
   return (
     <div
       style={{ fontFamily: "'Inter', sans-serif" }}
-      className="min-h-screen bg-[#EEF2F9] flex items-start justify-center"
+      className="min-h-[100dvh] bg-[#EEF2F9] flex items-start justify-center"
     >
       {erroDosDados && (
         <div className="fixed left-1/2 top-3 z-[100] w-[calc(100%-2rem)] max-w-sm -translate-x-1/2 rounded-2xl bg-red-600 px-4 py-3 text-center text-xs font-semibold text-white shadow-lg">
           {erroDosDados}
         </div>
       )}
-      <div className="w-full max-w-sm min-h-screen bg-[#EEF2F9] flex flex-col relative shadow-xl">
+      <div className="w-full min-h-[100dvh] bg-[#EEF2F9] flex flex-col relative sm:max-w-sm sm:shadow-xl">
         {/* ══════════════ ABA INÍCIO ══════════════ */}
         {aba === "inicio" && (
           <TelaInicio
@@ -1229,11 +1261,6 @@ export default function GestaoLifeApp({
                                 <p className="text-2xl font-bold text-emerald-700">
                                   ≈ {formatarMoeda(economia)}
                                 </p>
-                                <p className="text-[10px] text-emerald-700 mt-1">
-                                  Estimativa baseada no histórico. Não
-                                  representa dinheiro comprovadamente
-                                  economizado.
-                                </p>
                               </div>
                             )}
                           </div>
@@ -1322,7 +1349,13 @@ export default function GestaoLifeApp({
                           id={`bloco-${bloco.id}`}
                           type="text"
                           value={bloco.texto}
-                          placeholder="Escreva algo…"
+                          placeholder={
+                            notaAberta.blocos.every(
+                              (item) => !item.texto.trim(),
+                            ) && notaAberta.blocos[0]?.id === bloco.id
+                              ? "Escreva algo…"
+                              : undefined
+                          }
                           className="bg-transparent text-sm text-gray-600 outline-none w-full"
                           onChange={(e) => {
                             const val = e.target.value
@@ -1684,8 +1717,10 @@ export default function GestaoLifeApp({
           <div
             className="fixed inset-0 bg-black/50 z-20 flex items-end justify-center sheet-backdrop"
             onClick={(e) => {
-              if (e.target === e.currentTarget)
+              if (e.target === e.currentTarget) {
                 definirModalNovaNotaAberta(false)
+                definirBlocoEditandoData(null)
+              }
             }}
           >
             <div
@@ -1694,7 +1729,10 @@ export default function GestaoLifeApp({
             >
               <div className="flex-shrink-0 flex items-center justify-between px-5 pt-5 pb-3">
                 <button
-                  onClick={() => definirModalNovaNotaAberta(false)}
+                  onClick={() => {
+                    definirModalNovaNotaAberta(false)
+                    definirBlocoEditandoData(null)
+                  }}
                   aria-label="Fechar"
                   className="p-2.5 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-xl transition-colors"
                 >
@@ -1839,123 +1877,191 @@ export default function GestaoLifeApp({
                       return (
                         <div key={`bg-${checkboxes[0].id}`}>
                           {checkboxes.map((b) => (
-                            <div
-                              key={`b-${b.id}`}
-                              className="flex items-center gap-2 py-1"
-                            >
-                              <button
-                                onClick={() =>
-                                  definirBlocosNovaNota((prev) =>
-                                    prev.map((x) =>
-                                      x.id === b.id
-                                        ? { ...x, concluida: !x.concluida }
-                                        : x,
-                                    ),
-                                  )
-                                }
-                                className={`w-[18px] h-[18px] rounded-md border-2 flex items-center justify-center shrink-0 transition-all ${
-                                  b.concluida
-                                    ? "bg-[#1A56DB] border-[#1A56DB]"
-                                    : "border-gray-300"
-                                }`}
-                                style={{ minWidth: 18 }}
-                              >
-                                {b.concluida && <IconeConfirmar />}
-                              </button>
-                              <input
-                                id={`nb-${b.id}`}
-                                type="text"
-                                value={b.texto}
-                                className={`flex-1 bg-transparent text-sm outline-none transition-colors ${
-                                  b.concluida
-                                    ? "line-through text-gray-500"
-                                    : "text-gray-800"
-                                }`}
-                                onChange={(e) => {
-                                  definirBlocosNovaNota((prev) =>
-                                    prev.map((x) =>
-                                      x.id === b.id
-                                        ? { ...x, texto: e.target.value }
-                                        : x,
-                                    ),
-                                  )
-                                }}
-                                onKeyDown={(e) => {
-                                  if (e.key === "Enter") {
-                                    e.preventDefault()
-                                    const currentVal = e.currentTarget.value
-                                    const pos =
-                                      e.currentTarget.selectionStart ??
-                                      currentVal.length
-                                    const antes = currentVal.slice(0, pos)
-                                    const depois = currentVal.slice(pos)
-                                    const newId = gerarProximoIdentificador()
-                                    const bid = b.id
-                                    definirBlocosNovaNota((prev) => {
-                                      const blocos2 = prev.map((x) =>
-                                        x.id === bid
-                                          ? { ...x, texto: antes }
-                                          : x,
-                                      )
-                                      const idx2 = blocos2.findIndex(
-                                        (x) => x.id === bid,
-                                      )
-                                      blocos2.splice(idx2 + 1, 0, {
-                                        id: newId,
-                                        tipo: "checkbox",
-                                        texto: depois,
-                                        concluida: false,
+                            <div key={`b-${b.id}`}>
+                              <div className="flex items-center gap-2 py-1">
+                                <button
+                                  onClick={() =>
+                                    atualizarBlocoDaNovaNota(b.id, {
+                                      concluida: !b.concluida,
+                                    })
+                                  }
+                                  className={`w-[18px] h-[18px] rounded-md border-2 flex items-center justify-center shrink-0 transition-all ${
+                                    b.concluida
+                                      ? "bg-[#1A56DB] border-[#1A56DB]"
+                                      : "border-gray-300"
+                                  }`}
+                                  style={{ minWidth: 18 }}
+                                >
+                                  {b.concluida && <IconeConfirmar />}
+                                </button>
+                                <input
+                                  id={`nb-${b.id}`}
+                                  type="text"
+                                  value={b.texto}
+                                  className={`flex-1 bg-transparent text-sm outline-none transition-colors ${
+                                    b.concluida
+                                      ? "line-through text-gray-500"
+                                      : "text-gray-800"
+                                  }`}
+                                  onChange={(e) =>
+                                    atualizarBlocoDaNovaNota(b.id, {
+                                      texto: e.target.value,
+                                    })
+                                  }
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter") {
+                                      e.preventDefault()
+                                      const currentVal = e.currentTarget.value
+                                      const pos =
+                                        e.currentTarget.selectionStart ??
+                                        currentVal.length
+                                      const antes = currentVal.slice(0, pos)
+                                      const depois = currentVal.slice(pos)
+                                      const newId = gerarProximoIdentificador()
+                                      const bid = b.id
+                                      definirBlocosNovaNota((prev) => {
+                                        const blocos2 = prev.map((x) =>
+                                          x.id === bid
+                                            ? { ...x, texto: antes }
+                                            : x,
+                                        )
+                                        const idx2 = blocos2.findIndex(
+                                          (x) => x.id === bid,
+                                        )
+                                        blocos2.splice(idx2 + 1, 0, {
+                                          id: newId,
+                                          tipo: "checkbox",
+                                          texto: depois,
+                                          concluida: false,
+                                        })
+                                        return blocos2
                                       })
-                                      return blocos2
-                                    })
-                                    setTimeout(() => {
-                                      ;(document.getElementById(
-                                        `nb-${newId}`,
-                                      ) as HTMLInputElement)?.focus()
-                                    }, 0)
-                                  }
-                                  if (
-                                    e.key === "Backspace" &&
-                                    e.currentTarget.value === ""
-                                  ) {
-                                    const bid = b.id
-                                    definirBlocosNovaNota((prev) => {
-                                      const idx2 = prev.findIndex(
-                                        (x) => x.id === bid,
-                                      )
-                                      if (idx2 > 0) {
-                                        const prevBloco = prev[idx2 - 1]
-                                        if (prevBloco.tipo === "texto") {
-                                          setTimeout(() => {
-                                            ;(document.getElementById(
-                                              `nb-${prevBloco.id}`,
-                                            ) as HTMLInputElement)?.focus()
-                                          }, 0)
-                                          return prev.filter(
-                                            (x) => x.id !== bid,
-                                          )
-                                        } else {
-                                          setTimeout(() => {
-                                            ;(document.getElementById(
-                                              `nb-${bid}`,
-                                            ) as HTMLInputElement)?.focus()
-                                          }, 0)
-                                          return prev.map((x) =>
-                                            x.id === bid
-                                              ? { ...x, tipo: "texto" }
-                                              : x,
-                                          )
+                                      setTimeout(() => {
+                                        ;(document.getElementById(
+                                          `nb-${newId}`,
+                                        ) as HTMLInputElement)?.focus()
+                                      }, 0)
+                                    }
+                                    if (
+                                      e.key === "Backspace" &&
+                                      e.currentTarget.value === ""
+                                    ) {
+                                      const bid = b.id
+                                      definirBlocosNovaNota((prev) => {
+                                        const idx2 = prev.findIndex(
+                                          (x) => x.id === bid,
+                                        )
+                                        if (idx2 > 0) {
+                                          const prevBloco = prev[idx2 - 1]
+                                          if (prevBloco.tipo === "texto") {
+                                            setTimeout(() => {
+                                              ;(document.getElementById(
+                                                `nb-${prevBloco.id}`,
+                                              ) as HTMLInputElement)?.focus()
+                                            }, 0)
+                                            return prev.filter(
+                                              (x) => x.id !== bid,
+                                            )
+                                          } else {
+                                            setTimeout(() => {
+                                              ;(document.getElementById(
+                                                `nb-${bid}`,
+                                              ) as HTMLInputElement)?.focus()
+                                            }, 0)
+                                            return prev.map((x) =>
+                                              x.id === bid
+                                                ? { ...x, tipo: "texto" }
+                                                : x,
+                                            )
+                                          }
                                         }
-                                      }
-                                      return prev.map((x) =>
-                                        x.id === bid
-                                          ? { ...x, tipo: "texto" }
-                                          : x,
-                                      )
-                                    })
+                                        return prev.map((x) =>
+                                          x.id === bid
+                                            ? { ...x, tipo: "texto" }
+                                            : x,
+                                        )
+                                      })
+                                    }
+                                  }}
+                                />
+                                <button
+                                  onClick={() =>
+                                    definirBlocoEditandoData(
+                                      blocoEditandoData === b.id ? null : b.id,
+                                    )
                                   }
-                                }}
-                              />
+                                  className={`p-1 rounded-lg transition-colors shrink-0 ${
+                                    b.data
+                                      ? "text-[#3B82F6]"
+                                      : "text-gray-500 hover:text-gray-600"
+                                  }`}
+                                  aria-label="Definir data e horário"
+                                >
+                                  <IconeRelogio tamanho={13} />
+                                </button>
+                              </div>
+                              {b.data && blocoEditandoData !== b.id && (
+                                <div className="flex items-center gap-1 ml-7 mb-1">
+                                  <span className="text-[10px] text-[#3B82F6] font-medium bg-[#EFF6FF] px-2 py-0.5 rounded-full flex items-center gap-1">
+                                    <IconeRelogio tamanho={9} />
+                                    {formatarDataTarefa(b.data, b.hora)}
+                                  </span>
+                                  <button
+                                    onClick={() =>
+                                      atualizarBlocoDaNovaNota(b.id, {
+                                        data: undefined,
+                                        hora: undefined,
+                                      })
+                                    }
+                                    className="text-gray-500 hover:text-gray-600 transition-colors"
+                                    aria-label="Remover data e horário"
+                                  >
+                                    <IconeFechar />
+                                  </button>
+                                </div>
+                              )}
+                              {blocoEditandoData === b.id && (
+                                <div className="ml-7 mb-2 p-3 bg-gray-50 rounded-2xl space-y-2">
+                                  <div>
+                                    <p className="text-[11px] text-gray-700 font-semibold mb-1">
+                                      Data
+                                    </p>
+                                    <input
+                                      type="date"
+                                      value={b.data ?? ""}
+                                      onChange={(e) =>
+                                        atualizarBlocoDaNovaNota(b.id, {
+                                          data: e.target.value || undefined,
+                                        })
+                                      }
+                                      className="bg-white border border-gray-200 rounded-xl px-3 py-1.5 text-sm text-gray-800 outline-none w-full"
+                                    />
+                                  </div>
+                                  <div>
+                                    <p className="text-[11px] text-gray-700 font-semibold mb-1">
+                                      Horário (opcional)
+                                    </p>
+                                    <input
+                                      type="time"
+                                      value={b.hora ?? ""}
+                                      onChange={(e) =>
+                                        atualizarBlocoDaNovaNota(b.id, {
+                                          hora: e.target.value || undefined,
+                                        })
+                                      }
+                                      className="bg-white border border-gray-200 rounded-xl px-3 py-1.5 text-sm text-gray-800 outline-none w-full"
+                                    />
+                                  </div>
+                                  <button
+                                    onClick={() =>
+                                      definirBlocoEditandoData(null)
+                                    }
+                                    className="w-full py-1.5 text-xs font-semibold bg-[#1A56DB] text-white rounded-xl"
+                                  >
+                                    Confirmar
+                                  </button>
+                                </div>
+                              )}
                             </div>
                           ))}
                           {total > 0 && (

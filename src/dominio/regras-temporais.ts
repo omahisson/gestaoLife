@@ -88,3 +88,49 @@ export function obterDataEHoraAtuais(): { data: string; hora: string } {
     hora: `${String(momento.getHours()).padStart(2, "0")}:${String(momento.getMinutes()).padStart(2, "0")}`,
   }
 }
+
+function criarDataComDiaLimitado(ano: number, mes: number, dia: number): Date {
+  const ultimoDiaDoMes = new Date(ano, mes + 1, 0).getDate()
+  return new Date(ano, mes, Math.min(dia, ultimoDiaDoMes))
+}
+
+export function obterPeriodoDoCicloFinanceiro(
+  diaFechamento: number,
+  referencia = new Date(),
+): { inicio: Date; fim: Date; diasRestantes: number } {
+  const hoje = new Date(
+    referencia.getFullYear(),
+    referencia.getMonth(),
+    referencia.getDate(),
+  )
+  let fim = criarDataComDiaLimitado(
+    hoje.getFullYear(),
+    hoje.getMonth(),
+    diaFechamento,
+  )
+
+  if (hoje > fim) {
+    fim = criarDataComDiaLimitado(
+      hoje.getFullYear(),
+      hoje.getMonth() + 1,
+      diaFechamento,
+    )
+  }
+
+  const fechamentoAnterior = criarDataComDiaLimitado(
+    fim.getFullYear(),
+    fim.getMonth() - 1,
+    diaFechamento,
+  )
+  const inicio = new Date(fechamentoAnterior)
+  inicio.setDate(inicio.getDate() + 1)
+
+  return {
+    inicio,
+    fim,
+    diasRestantes: Math.max(
+      Math.ceil((fim.getTime() - hoje.getTime()) / 86_400_000),
+      0,
+    ),
+  }
+}

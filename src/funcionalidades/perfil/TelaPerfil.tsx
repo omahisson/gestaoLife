@@ -6,7 +6,8 @@ import {
   IconeLixeira,
   IconeMais,
 } from "../../componentes/icones/Icones"
-import { HOJE } from "../../dominio/constantes"
+import { MESES_ABREVIADOS } from "../../dominio/constantes"
+import { obterPeriodoDoCicloFinanceiro } from "../../dominio/regras-temporais"
 
 interface PropriedadesTelaPerfil {
   nomeUsuario: string
@@ -43,6 +44,11 @@ export default function TelaPerfil({
   const [diaTemporario, definirDiaTemporario] = useState(diaFechamento)
   const [adicionandoCartao, definirAdicionandoCartao] = useState(false)
   const [novoCartao, definirNovoCartao] = useState("")
+  const periodoDoCiclo = obterPeriodoDoCicloFinanceiro(diaFechamento)
+
+  function formatarDataDoCiclo(data: Date) {
+    return `${data.getDate()} de ${MESES_ABREVIADOS[data.getMonth()]}`
+  }
 
   function confirmarNome() {
     aoAlterarNome(nomeTemporario.trim() || nomeUsuario)
@@ -61,7 +67,11 @@ export default function TelaPerfil({
 
   function adicionarCartao() {
     const nome = novoCartao.trim()
-    if (!nome) return
+    if (!nome) {
+      definirNovoCartao("")
+      definirAdicionandoCartao(false)
+      return
+    }
     aoAdicionarCartao(nome)
     definirNovoCartao("")
     definirAdicionandoCartao(false)
@@ -80,7 +90,17 @@ export default function TelaPerfil({
           />
           <div className="flex-1 min-w-0">
             {editandoNome ? (
-              <div className="flex items-center gap-2">
+              <div
+                className="flex items-center gap-2"
+                onBlur={(evento) => {
+                  if (
+                    !evento.currentTarget.contains(
+                      evento.relatedTarget as Node | null,
+                    )
+                  )
+                    confirmarNome()
+                }}
+              >
                 <input
                   type="text"
                   value={nomeTemporario}
@@ -195,13 +215,17 @@ export default function TelaPerfil({
             <div className="border-t border-gray-100 px-4 py-3">
               <p className="text-xs text-gray-600">
                 Seu ciclo vai de{" "}
-                <strong className="text-gray-700">1 de Set</strong> até{" "}
                 <strong className="text-gray-700">
-                  {diaFechamento} de Set
+                  {formatarDataDoCiclo(periodoDoCiclo.inicio)}
+                </strong>{" "}
+                até{" "}
+                <strong className="text-gray-700">
+                  {formatarDataDoCiclo(periodoDoCiclo.fim)}
                 </strong>
                 . Restam{" "}
                 <strong className="text-gray-700">
-                  {Math.max(diaFechamento - HOJE.getDate(), 0)} dias
+                  {periodoDoCiclo.diasRestantes}{" "}
+                  {periodoDoCiclo.diasRestantes === 1 ? "dia" : "dias"}
                 </strong>{" "}
                 para o fechamento.
               </p>
@@ -215,14 +239,16 @@ export default function TelaPerfil({
               <p className="text-sm font-semibold text-gray-900">
                 Meus cartões
               </p>
-              <p className="text-xs text-gray-600 mt-0.5">
-                Apenas identificação — sem dados numéricos
-              </p>
             </div>
             <button
-              onClick={() =>
-                definirAdicionandoCartao((valorAtual) => !valorAtual)
-              }
+              onClick={() => {
+                if (adicionandoCartao) {
+                  definirNovoCartao("")
+                  definirAdicionandoCartao(false)
+                  return
+                }
+                definirAdicionandoCartao(true)
+              }}
               className="w-8 h-8 rounded-full bg-[#1A56DB] flex items-center justify-center text-white hover:bg-[#1D4ED8] transition-colors"
               aria-label="Adicionar cartão"
             >
@@ -231,7 +257,17 @@ export default function TelaPerfil({
           </div>
 
           {adicionandoCartao && (
-            <div className="border-t border-gray-100 p-4 flex gap-2">
+            <div
+              className="border-t border-gray-100 p-4 flex gap-2"
+              onBlur={(evento) => {
+                if (
+                  !evento.currentTarget.contains(
+                    evento.relatedTarget as Node | null,
+                  )
+                )
+                  adicionarCartao()
+              }}
+            >
               <input
                 type="text"
                 placeholder="Ex: Cartão principal"
@@ -239,6 +275,10 @@ export default function TelaPerfil({
                 onChange={(evento) => definirNovoCartao(evento.target.value)}
                 onKeyDown={(evento) => {
                   if (evento.key === "Enter") adicionarCartao()
+                  if (evento.key === "Escape") {
+                    definirNovoCartao("")
+                    definirAdicionandoCartao(false)
+                  }
                 }}
                 autoFocus
                 className="flex-1 px-3 py-2.5 bg-gray-100 rounded-xl text-sm outline-none placeholder-gray-400"
