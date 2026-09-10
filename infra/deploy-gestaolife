@@ -5,6 +5,7 @@ set -eu
 ORIGEM="/var/lib/jenkins/workspace/gestao-life"
 DESTINO_WEB="/var/www/gestaolife/current"
 DESTINO_API="/opt/gestaolife"
+DESTINO_PUBLICO_API="$DESTINO_API/public"
 DIRETORIO_BANCO="/var/lib/gestaolife"
 ARQUIVO_BANCO="$DIRETORIO_BANCO/db.json"
 PNPM="/usr/local/bin/pnpm"
@@ -28,6 +29,7 @@ fi
 
 /usr/bin/install -d -o www-data -g www-data -m 0755 "$DESTINO_WEB"
 /usr/bin/install -d -o gestaolife -g gestaolife -m 0750 "$DESTINO_API"
+/usr/bin/install -d -o gestaolife -g gestaolife -m 0750 "$DESTINO_PUBLICO_API"
 /usr/bin/install -d -o gestaolife -g gestaolife -m 0750 "$DIRETORIO_BANCO"
 
 if [ ! -f "$ARQUIVO_BANCO" ]; then
@@ -56,6 +58,19 @@ fi
 
 /usr/sbin/nginx -t
 /usr/bin/systemctl restart gestaolife-api
+
+TENTATIVA=1
+while ! /usr/bin/curl -fsS "http://127.0.0.1:3001/usuarios" > /dev/null; do
+    if [ "$TENTATIVA" -ge 10 ]; then
+        echo "A API não respondeu após 10 tentativas." >&2
+        /usr/bin/journalctl -u gestaolife-api -n 30 --no-pager >&2
+        exit 1
+    fi
+
+    TENTATIVA=$((TENTATIVA + 1))
+    /usr/bin/sleep 1
+done
+
 /usr/bin/systemctl reload nginx
 
 echo "Gestão Life implantado. O banco persistente não foi sobrescrito."

@@ -97,6 +97,15 @@ cat /var/lib/jenkins/secrets/initialAdminPassword
 
 Na tela de complementos, clique primeiro em **Nenhum** e marque somente **Pipeline** e **Git**. O instalador adicionará automaticamente **Credentials**, **SSH Credentials** e as demais dependências obrigatórias. Não marque **SSH Build Agents**, pois a implantação será executada no próprio servidor. Evite a instalação indiscriminada dos complementos sugeridos, pois eles aumentam o consumo de memória e disco. Em **Manage Jenkins > Nodes > Built-In Node > Configure**, mantenha apenas **1 executor**.
 
+Nesta VPS, `/tmp` é um `tmpfs` de aproximadamente 428 MB. O monitor padrão do Jenkins pode interpretar esse tamanho como falta de espaço e desconectar o nó, mesmo que o SSD ainda tenha vários gigabytes livres. Na configuração do **Built-In Node**, marque **Disk Space Monitoring Thresholds** e use:
+
+- limite de espaço livre em disco: `1GB`;
+- aviso de espaço livre em disco: `2GB`;
+- limite de espaço temporário livre: `100MB`;
+- aviso de espaço temporário livre: `200MB`.
+
+Salve, abra a página de situação do nó e clique em **Esse nó voltou a ficar online**. Não aumente o tamanho de `/tmp`: o ajuste do monitor é suficiente para esta implantação.
+
 ## 5. Dar ao Jenkins acesso somente de leitura ao GitHub
 
 Crie uma chave exclusiva para este repositório:
@@ -159,6 +168,8 @@ nginx -t
 
 O serviço da API será iniciado pelo primeiro build. Não altere manualmente `/var/lib/gestaolife/db.json`: ele é o banco compartilhado entre navegadores.
 
+O implantador cria também `/opt/gestaolife/public`, exigido pelo JSON Server, e só conclui depois que a API responde em `127.0.0.1:3001`. Se a API falhar ao iniciar, o build será marcado como falho e apresentará as últimas linhas do serviço.
+
 ## 8. Criar o pipeline no Jenkins
 
 1. Clique em **New Item**.
@@ -207,7 +218,7 @@ Com apenas 10 GB de disco, confira o consumo pelo menos uma vez por mês:
 
 ```bash
 du -sh /var/lib/jenkins /var/lib/gestaolife /opt/gestaolife /var/cache/apt
-sudo -u jenkins pnpm store prune
+sudo -u jenkins sh -c 'cd /var/lib/jenkins && pnpm store prune'
 journalctl --vacuum-size=100M
 apt clean
 df -h
