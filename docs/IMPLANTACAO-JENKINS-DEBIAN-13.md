@@ -96,7 +96,7 @@ Acesse `http://localhost:8081`. Para obter a senha inicial, execute na VPS:
 cat /var/lib/jenkins/secrets/initialAdminPassword
 ```
 
-Na tela de complementos, clique primeiro em **Nenhum** e marque somente **Pipeline** e **Git**. O instalador adicionará automaticamente **Credentials**, **SSH Credentials** e as demais dependências obrigatórias. Não marque **SSH Build Agents**, pois a implantação será executada no próprio servidor. Evite a instalação indiscriminada dos complementos sugeridos, pois eles aumentam o consumo de memória e disco. Em **Manage Jenkins > Nodes > Built-In Node > Configure**, mantenha apenas **1 executor**.
+Na tela de complementos, clique primeiro em **Nenhum** e marque somente **Pipeline**, **Git** e **GitHub**. O instalador adicionará automaticamente **Credentials**, **SSH Credentials** e as demais dependências obrigatórias. Não marque **SSH Build Agents**, pois a implantação será executada no próprio servidor. Evite a instalação indiscriminada dos complementos sugeridos, pois eles aumentam o consumo de memória e disco. Em **Manage Jenkins > Nodes > Built-In Node > Configure**, mantenha apenas **1 executor**.
 
 Na página do **Built-In Node**, o campo de espaço temporário deve apresentar o espaço livre do SSD, e não os aproximadamente 428 MB de `/tmp`. Se o nó tiver sido desconectado antes dessa configuração, clique uma última vez em **Esse nó voltou a ficar online**.
 
@@ -174,10 +174,10 @@ O implantador cria também `/opt/gestaolife/public`, exigido pelo JSON Server, e
 6. Selecione a credencial `github-gestaolife`.
 7. Em branch, use `*/main`.
 8. Em Script Path, use `Jenkinsfile`.
-9. Em **Build Triggers**, marque **Poll SCM** e informe `H/5 * * * *`.
-10. Salve. Se esta for a primeira implantação, clique uma vez em **Build Now**.
+9. Não marque **Poll SCM**. O gatilho do GitHub será registrado pelo `Jenkinsfile`.
+10. Salve e clique uma vez em **Build Now** para fazer a primeira implantação.
 
-O `Jenkinsfile` também registra o mesmo agendamento. Depois do primeiro build, cada `git push` para `main` será detectado em aproximadamente cinco minutos, sem expor o painel do Jenkins à internet e sem exigir outro clique em **Build Now**.
+O primeiro build registra o gatilho `githubPush`. Depois de configurar o webhook na etapa 10, cada `git push` para `main` iniciará o pipeline imediatamente, sem consultas de cinco em cinco minutos e sem outro clique em **Build Now**.
 
 ## 9. Verificar a implantação
 
@@ -194,7 +194,7 @@ df -h
 
 A aplicação ficará disponível em `http://74.208.102.177`. No firewall da provedora, deixe abertas somente as portas 22 e 80 neste primeiro momento. Não abra 3001 nem 8080.
 
-## 10. Configurar domínio e HTTPS
+## 10. Configurar domínio, HTTPS e o webhook
 
 Depois de apontar `gestaolife.duckdns.org` para `74.208.102.177`, confirme a resolução e instale a configuração atualizada do Nginx:
 
@@ -222,6 +222,29 @@ certbot renew --dry-run
 ```
 
 A aplicação passa a ser acessada por `https://gestaolife.duckdns.org`. O Certbot modifica a configuração instalada do Nginx para incluir o certificado; não a substitua posteriormente por uma versão antiga do arquivo do repositório.
+
+No Jenkins, confirme em **Manage Jenkins > Plugins > Installed plugins** que o complemento **GitHub** está instalado. Se não estiver, instale-o em **Available plugins** e reinicie o Jenkins somente se o painel solicitar. O painel continua acessível apenas pelo túnel SSH; o Nginx publica somente o caminho exato do webhook.
+
+No GitHub, abra **Settings > Webhooks > Add webhook** e use:
+
+- Payload URL: `https://gestaolife.duckdns.org/github-webhook/`
+- Content type: `application/json`
+- Secret: deixe vazio neste modo de integração
+- SSL verification: habilitada
+- Which events: `Just the push event`
+- Active: habilitado
+
+Salve e abra **Recent Deliveries**. A entrega de teste deve ficar verde e retornar HTTP 200. O complemento oficial do GitHub valida o evento consultando o próprio GitHub antes de iniciar o trabalho.
+
+No Jenkins, abra **gestao-life > Configure > Build Triggers**, confirme que **GitHub hook trigger for GITScm polling** está habilitado e que **Poll SCM** está desabilitado. Não habilite **Trigger builds remotely**: essa opção usa uma URL com token para scripts genéricos e não é necessária para o webhook validado pelo complemento do GitHub.
+
+Faça então um commit pequeno na branch `main`. Em **Settings > Webhooks > Recent Deliveries**, a entrega deve retornar HTTP 200; no Jenkins, o build deve começar em poucos segundos. Se retornar erro, consulte:
+
+```bash
+journalctl -u nginx -n 50 --no-pager
+journalctl -u jenkins -n 100 --no-pager
+curl -I https://gestaolife.duckdns.org
+```
 
 ## 11. Operação e cópia de segurança
 
