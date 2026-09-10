@@ -47,7 +47,7 @@ O Node.js do Debian 13 atende ao requisito do Vite 8.
 ```bash
 apt update
 apt install -y --no-install-recommends ca-certificates curl gnupg git nginx nodejs npm rsync openssh-client sudo
-npm install -g pnpm@11.19.0
+npm install -g pnpm@10.30.1
 npm cache clean --force
 node --version
 pnpm --version
@@ -66,19 +66,11 @@ apt update
 apt install -y jenkins
 ```
 
-Limite a memória e faça o Jenkins escutar somente no endereço local:
+Limite a memória e faça o Jenkins escutar somente no endereço local. O arquivo é criado diretamente para evitar erros ao salvar no editor:
 
 ```bash
-systemctl edit jenkins
-```
-
-Insira:
-
-```ini
-[Service]
-Environment="JAVA_OPTS=-Djava.awt.headless=true -Xms64m -Xmx256m -XX:+UseSerialGC"
-Environment="JENKINS_OPTS=--httpListenAddress=127.0.0.1"
-Nice=5
+install -d -m 0755 /etc/systemd/system/jenkins.service.d
+printf '%s\n' '[Service]' 'Environment="JAVA_OPTS=-Djava.awt.headless=true -Xms64m -Xmx256m -XX:+UseSerialGC"' 'Environment="JENKINS_OPTS=--httpListenAddress=127.0.0.1"' 'Nice=5' > /etc/systemd/system/jenkins.service.d/override.conf
 ```
 
 Depois aplique:
@@ -103,7 +95,7 @@ Acesse `http://localhost:8080`. Para obter a senha inicial, execute na VPS:
 cat /var/lib/jenkins/secrets/initialAdminPassword
 ```
 
-Instale somente os complementos necessários: **Pipeline**, **Git**, **Credentials** e **SSH Credentials**. Evite a instalação indiscriminada dos complementos sugeridos, pois eles aumentam o consumo de memória e disco. Em **Manage Jenkins > Nodes > Built-In Node > Configure**, mantenha apenas **1 executor**.
+Na tela de complementos, clique primeiro em **Nenhum** e marque somente **Pipeline** e **Git**. O instalador adicionará automaticamente **Credentials**, **SSH Credentials** e as demais dependências obrigatórias. Não marque **SSH Build Agents**, pois a implantação será executada no próprio servidor. Evite a instalação indiscriminada dos complementos sugeridos, pois eles aumentam o consumo de memória e disco. Em **Manage Jenkins > Nodes > Built-In Node > Configure**, mantenha apenas **1 executor**.
 
 ## 5. Dar ao Jenkins acesso somente de leitura ao GitHub
 
