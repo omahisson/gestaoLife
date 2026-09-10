@@ -14,6 +14,10 @@ pipeline {
     PATH = '/usr/local/bin:/usr/bin:/bin'
   }
 
+  triggers {
+    pollSCM('H/5 * * * *')
+  }
+
   stages {
     stage('Obter código-fonte') {
       steps {

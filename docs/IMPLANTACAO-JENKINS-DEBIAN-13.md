@@ -66,11 +66,12 @@ apt update
 apt install -y jenkins
 ```
 
-Limite a memória e faça o Jenkins escutar somente no endereço local. O arquivo é criado diretamente para evitar erros ao salvar no editor:
+Limite a memória, mantenha o Jenkins somente no endereço local e direcione seus arquivos temporários para o SSD. Isso evita que o monitor desconecte o nó por causa do pequeno `tmpfs` desta VPS:
 
 ```bash
 install -d -m 0755 /etc/systemd/system/jenkins.service.d
-printf '%s\n' '[Service]' 'Environment="JAVA_OPTS=-Djava.awt.headless=true -Xms64m -Xmx256m -XX:+UseSerialGC"' 'Environment="JENKINS_OPTS=--httpListenAddress=127.0.0.1"' 'Nice=5' > /etc/systemd/system/jenkins.service.d/override.conf
+install -d -o jenkins -g jenkins -m 0750 /var/lib/jenkins/tmp
+printf '%s\n' '[Service]' 'Environment="JAVA_OPTS=-Djava.awt.headless=true -Djava.io.tmpdir=/var/lib/jenkins/tmp -Xms64m -Xmx256m -XX:+UseSerialGC"' 'Environment="JENKINS_OPTS=--httpListenAddress=127.0.0.1"' 'Nice=5' > /etc/systemd/system/jenkins.service.d/override.conf
 ```
 
 Depois aplique:
@@ -86,10 +87,10 @@ systemctl status jenkins --no-pager
 Não abra a porta 8080 na internet. Em outro terminal da sua máquina, crie um túnel SSH:
 
 ```bash
-ssh -L 8080:127.0.0.1:8080 root@74.208.102.177
+ssh -N -L 127.0.0.1:8081:127.0.0.1:8080 root@74.208.102.177
 ```
 
-Acesse `http://localhost:8080`. Para obter a senha inicial, execute na VPS:
+Acesse `http://localhost:8081`. Para obter a senha inicial, execute na VPS:
 
 ```bash
 cat /var/lib/jenkins/secrets/initialAdminPassword
@@ -97,14 +98,7 @@ cat /var/lib/jenkins/secrets/initialAdminPassword
 
 Na tela de complementos, clique primeiro em **Nenhum** e marque somente **Pipeline** e **Git**. O instalador adicionará automaticamente **Credentials**, **SSH Credentials** e as demais dependências obrigatórias. Não marque **SSH Build Agents**, pois a implantação será executada no próprio servidor. Evite a instalação indiscriminada dos complementos sugeridos, pois eles aumentam o consumo de memória e disco. Em **Manage Jenkins > Nodes > Built-In Node > Configure**, mantenha apenas **1 executor**.
 
-Nesta VPS, `/tmp` é um `tmpfs` de aproximadamente 428 MB. O monitor padrão do Jenkins pode interpretar esse tamanho como falta de espaço e desconectar o nó, mesmo que o SSD ainda tenha vários gigabytes livres. Na configuração do **Built-In Node**, marque **Disk Space Monitoring Thresholds** e use:
-
-- limite de espaço livre em disco: `1GB`;
-- aviso de espaço livre em disco: `2GB`;
-- limite de espaço temporário livre: `100MB`;
-- aviso de espaço temporário livre: `200MB`.
-
-Salve, abra a página de situação do nó e clique em **Esse nó voltou a ficar online**. Não aumente o tamanho de `/tmp`: o ajuste do monitor é suficiente para esta implantação.
+Na página do **Built-In Node**, o campo de espaço temporário deve apresentar o espaço livre do SSD, e não os aproximadamente 428 MB de `/tmp`. Se o nó tiver sido desconectado antes dessa configuração, clique uma última vez em **Esse nó voltou a ficar online**.
 
 ## 5. Dar ao Jenkins acesso somente de leitura ao GitHub
 
@@ -180,9 +174,10 @@ O implantador cria também `/opt/gestaolife/public`, exigido pelo JSON Server, e
 6. Selecione a credencial `github-gestaolife`.
 7. Em branch, use `*/main`.
 8. Em Script Path, use `Jenkinsfile`.
-9. Salve e clique em **Build Now**.
+9. Em **Build Triggers**, marque **Poll SCM** e informe `H/5 * * * *`.
+10. Salve. Se esta for a primeira implantação, clique uma vez em **Build Now**.
 
-Se quiser verificação automática sem expor o Jenkins ao GitHub, habilite **Poll SCM** com `H/5 * * * *`. O Jenkins verificará o repositório aproximadamente a cada cinco minutos.
+O `Jenkinsfile` também registra o mesmo agendamento. Depois do primeiro build, cada `git push` para `main` será detectado em aproximadamente cinco minutos, sem expor o painel do Jenkins à internet e sem exigir outro clique em **Build Now**.
 
 ## 9. Verificar a implantação
 

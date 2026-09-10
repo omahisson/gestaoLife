@@ -3,6 +3,7 @@ import {
   buscarUsuariosPorLogin,
   criarContaNoBanco,
 } from "../dados/repositorio-remoto"
+import { gerarHashSha256Local } from "./hash-sha256"
 
 const chaveDaSessao = "gestao-life:usuario-autenticado"
 
@@ -13,8 +14,12 @@ export interface NovoUsuario {
 }
 
 async function gerarHashDaSenha(senha: string): Promise<string> {
+  if (!globalThis.crypto?.subtle) {
+    return gerarHashSha256Local(senha)
+  }
+
   const conteudo = new TextEncoder().encode(senha)
-  const resumo = await crypto.subtle.digest("SHA-256", conteudo)
+  const resumo = await globalThis.crypto.subtle.digest("SHA-256", conteudo)
   return Array.from(new Uint8Array(resumo))
     .map((byte) => byte.toString(16).padStart(2, "0"))
     .join("")
