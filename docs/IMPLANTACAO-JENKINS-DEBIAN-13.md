@@ -194,7 +194,36 @@ df -h
 
 A aplicação ficará disponível em `http://74.208.102.177`. No firewall da provedora, deixe abertas somente as portas 22 e 80 neste primeiro momento. Não abra 3001 nem 8080.
 
-## 10. Operação e cópia de segurança
+## 10. Configurar domínio e HTTPS
+
+Depois de apontar `gestaolife.duckdns.org` para `74.208.102.177`, confirme a resolução e instale a configuração atualizada do Nginx:
+
+```bash
+getent ahostsv4 gestaolife.duckdns.org
+install -m 0644 /var/lib/jenkins/workspace/gestao-life/infra/nginx-gestaolife.conf /etc/nginx/sites-available/gestaolife
+nginx -t
+systemctl reload nginx
+```
+
+Abra também a porta 443 no firewall da provedora. Instale o Certbot e solicite um certificado ao Let's Encrypt:
+
+```bash
+apt update
+apt install -y --no-install-recommends certbot python3-certbot-nginx
+certbot --nginx -d gestaolife.duckdns.org --redirect
+```
+
+Informe um e-mail válido, aceite os termos e não compartilhe esse endereço com terceiros se não desejar receber mensagens da EFF. Depois valide o acesso e a renovação automática:
+
+```bash
+curl -I https://gestaolife.duckdns.org
+systemctl status certbot.timer --no-pager
+certbot renew --dry-run
+```
+
+A aplicação passa a ser acessada por `https://gestaolife.duckdns.org`. O Certbot modifica a configuração instalada do Nginx para incluir o certificado; não a substitua posteriormente por uma versão antiga do arquivo do repositório.
+
+## 11. Operação e cópia de segurança
 
 Antes de uma alteração importante, faça uma cópia do banco:
 
