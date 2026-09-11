@@ -1,4 +1,3 @@
-import { HOJE } from "./constantes"
 import type { Meta, TipoRecorrencia } from "./modelos"
 
 export function formatarMoeda(valor: number): string {
@@ -8,12 +7,12 @@ export function formatarMoeda(valor: number): string {
 export function calcularProjecao(
   valor: number,
   recorrencia: TipoRecorrencia,
-  diaFechamento: number,
+  diasRestantes: number,
   ocorrenciasPersonalizadas?: number,
 ): number {
-  const diasRestantes = Math.max(diaFechamento - HOJE.getDate(), 0)
-  if (recorrencia === "diaria") return valor * diasRestantes
-  if (recorrencia === "semanal") return valor * Math.ceil(diasRestantes / 7)
+  const quantidadeDias = Math.max(diasRestantes, 0)
+  if (recorrencia === "diaria") return valor * quantidadeDias
+  if (recorrencia === "semanal") return valor * Math.ceil(quantidadeDias / 7)
   if (recorrencia === "mensal") return valor
   if (recorrencia === "personalizada")
     return valor * (ocorrenciasPersonalizadas ?? 1)

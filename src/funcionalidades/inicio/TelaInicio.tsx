@@ -36,6 +36,7 @@ interface PropriedadesTelaInicio {
   diaSelecionado: Date
   inicioIntervalo: Date | null
   fimIntervalo: Date | null
+  dataFimDoCiclo: string
   despesas: Despesa[]
   despesasDaVisao: Despesa[]
   totalDaVisao: number
@@ -68,6 +69,7 @@ export default function TelaInicio({
   diaSelecionado,
   inicioIntervalo,
   fimIntervalo,
+  dataFimDoCiclo,
   despesas,
   despesasDaVisao,
   totalDaVisao,
@@ -245,6 +247,7 @@ export default function TelaInicio({
               diaSelecionado={diaSelecionado}
               inicioIntervalo={inicioIntervalo}
               fimIntervalo={fimIntervalo}
+              dataFimDoCiclo={dataFimDoCiclo}
               calcularTotalPorData={calcularTotalPorData}
               contarTarefasPorData={contarTarefasPorData}
               estaNoIntervalo={estaNoIntervalo}
@@ -324,6 +327,7 @@ function CalendarioMensal({
   diaSelecionado,
   inicioIntervalo,
   fimIntervalo,
+  dataFimDoCiclo,
   calcularTotalPorData,
   contarTarefasPorData,
   estaNoIntervalo,
@@ -335,6 +339,7 @@ function CalendarioMensal({
   diaSelecionado: Date
   inicioIntervalo: Date | null
   fimIntervalo: Date | null
+  dataFimDoCiclo: string
   calcularTotalPorData: (data: string) => number
   contarTarefasPorData: (data: string) => number
   estaNoIntervalo: (dia: Date) => boolean
@@ -359,6 +364,7 @@ function CalendarioMensal({
           if (!dia) return <div key={indice} className="aspect-square" />
           const data = formatarDataIso(dia)
           const ehHoje = data === formatarDataIso(HOJE)
+          const ehFimDoCiclo = data === dataFimDoCiclo
           const estaNaBorda = estaNaBordaDoIntervalo(dia)
           const estaDentro = estaNoIntervalo(dia)
           const total = calcularTotalPorData(data)
@@ -382,7 +388,9 @@ function CalendarioMensal({
                         ? "bg-[#DBEAFE] text-[#1D4ED8]"
                         : ehHoje
                           ? "text-[#1A56DB] font-bold ring-1 ring-[#1A56DB]/30"
-                          : "text-gray-700 group-hover:bg-gray-100"
+                          : ehFimDoCiclo
+                            ? "text-[#1A56DB] font-bold group-hover:bg-blue-50"
+                            : "text-gray-700 group-hover:bg-gray-100"
                 }`}
               >
                 {String(dia.getDate()).padStart(2, "0")}

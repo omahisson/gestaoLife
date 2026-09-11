@@ -26,6 +26,7 @@ interface PropriedadesTelaInsights {
   statusPeriodo: StatusPeriodo
   diaFechamento: number
   gastosDoMes: number
+  gastoRealComparativo: number
   projecaoDoMes: number
   previsaoAteHoje: number
   diferencaPrevisao: number | null
@@ -52,6 +53,7 @@ export default function TelaInsights({
   statusPeriodo,
   diaFechamento,
   gastosDoMes,
+  gastoRealComparativo,
   projecaoDoMes,
   previsaoAteHoje,
   diferencaPrevisao,
@@ -164,8 +166,8 @@ export default function TelaInsights({
             {statusPeriodo === "atual" && (
               <p className="text-[11px] text-orange-600 mt-2 font-medium">
                 ↑ {periodoDoCiclo.diasRestantes}{" "}
-                {periodoDoCiclo.diasRestantes === 1 ? "dia" : "dias"} ·{" "}
-                detalhes →
+                {periodoDoCiclo.diasRestantes === 1 ? "dia" : "dias"} · detalhes
+                →
               </p>
             )}
             {statusPeriodo === "passado" && (
@@ -198,7 +200,7 @@ export default function TelaInsights({
                   Gasto real
                 </p>
                 <p className="text-base font-bold text-gray-900">
-                  {formatarMoeda(gastosDoMes)}
+                  {formatarMoeda(gastoRealComparativo)}
                 </p>
               </div>
             </div>

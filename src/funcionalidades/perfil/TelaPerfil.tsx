@@ -20,6 +20,7 @@ interface PropriedadesTelaPerfil {
   aoAlterarNome: (nome: string) => void
   aoAlterarDiaFechamento: (dia: number) => void
   aoAdicionarCartao: (nome: string) => void
+  aoRenomearCartao: (nomeAtual: string, novoNome: string) => void
   aoRemoverCartao: (nome: string) => void
   aoSair: () => void
 }
@@ -35,6 +36,7 @@ export default function TelaPerfil({
   aoAlterarNome,
   aoAlterarDiaFechamento,
   aoAdicionarCartao,
+  aoRenomearCartao,
   aoRemoverCartao,
   aoSair,
 }: PropriedadesTelaPerfil) {
@@ -44,6 +46,8 @@ export default function TelaPerfil({
   const [diaTemporario, definirDiaTemporario] = useState(diaFechamento)
   const [adicionandoCartao, definirAdicionandoCartao] = useState(false)
   const [novoCartao, definirNovoCartao] = useState("")
+  const [cartaoEmEdicao, definirCartaoEmEdicao] = useState<string | null>(null)
+  const [nomeCartaoTemporario, definirNomeCartaoTemporario] = useState("")
   const periodoDoCiclo = obterPeriodoDoCicloFinanceiro(diaFechamento)
 
   function formatarDataDoCiclo(data: Date) {
@@ -75,6 +79,14 @@ export default function TelaPerfil({
     aoAdicionarCartao(nome)
     definirNovoCartao("")
     definirAdicionandoCartao(false)
+  }
+
+  function salvarNomeDoCartao() {
+    if (!cartaoEmEdicao) return
+    const novoNome = nomeCartaoTemporario.trim()
+    if (novoNome) aoRenomearCartao(cartaoEmEdicao, novoNome)
+    definirCartaoEmEdicao(null)
+    definirNomeCartaoTemporario("")
   }
 
   return (
@@ -306,19 +318,70 @@ export default function TelaPerfil({
                   className="flex items-center gap-3 px-4 py-3.5 border-b border-gray-50 last:border-0"
                 >
                   <span className="text-lg">💳</span>
-                  <span className="flex-1 text-sm font-medium text-gray-900 truncate">
-                    {cartao}
-                  </span>
+                  {cartaoEmEdicao === cartao ? (
+                    <div
+                      className="flex flex-1 items-center gap-2 min-w-0"
+                      onBlur={(evento) => {
+                        if (
+                          !evento.currentTarget.contains(
+                            evento.relatedTarget as Node | null,
+                          )
+                        )
+                          salvarNomeDoCartao()
+                      }}
+                    >
+                      <input
+                        type="text"
+                        value={nomeCartaoTemporario}
+                        onChange={(evento) =>
+                          definirNomeCartaoTemporario(evento.target.value)
+                        }
+                        onKeyDown={(evento) => {
+                          if (evento.key === "Enter") salvarNomeDoCartao()
+                          if (evento.key === "Escape")
+                            definirCartaoEmEdicao(null)
+                        }}
+                        autoFocus
+                        className="min-w-0 flex-1 rounded-xl bg-gray-100 px-3 py-2 text-sm font-medium text-gray-900 outline-none ring-[#1A56DB]/30 focus:ring-2"
+                        aria-label={`Novo nome de ${cartao}`}
+                      />
+                      <button
+                        type="button"
+                        onClick={salvarNomeDoCartao}
+                        className="rounded-xl bg-[#1A56DB] p-2.5 text-white"
+                        aria-label="Salvar nome do cartão"
+                      >
+                        <IconeConfirmar />
+                      </button>
+                    </div>
+                  ) : (
+                    <span className="flex-1 text-sm font-medium text-gray-900 truncate">
+                      {cartao}
+                    </span>
+                  )}
+                  {cartaoEmEdicao !== cartao && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        definirCartaoEmEdicao(cartao)
+                        definirNomeCartaoTemporario(cartao)
+                      }}
+                      aria-label={`Editar nome do cartão ${cartao}`}
+                      className="text-gray-500 hover:text-[#1A56DB] transition-colors p-2.5 rounded-xl hover:bg-blue-50"
+                    >
+                      <IconeEditar />
+                    </button>
+                  )}
                   <button
                     onClick={() => {
                       if (
                         window.confirm(
-                          `Excluir o cartão "${cartao}"? Esta ação não pode ser desfeita.`,
+                          `Excluir o cartão "${cartao}"? As despesas históricas serão mantidas, mas ele deixará de estar disponível em novos lançamentos.`,
                         )
                       )
                         aoRemoverCartao(cartao)
                     }}
-                    aria-label="Remover cartão"
+                    aria-label={`Remover cartão ${cartao}`}
                     className="text-gray-500 hover:text-red-500 transition-colors p-2.5 rounded-xl hover:bg-red-50"
                   >
                     <IconeLixeira />

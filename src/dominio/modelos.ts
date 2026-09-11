@@ -63,7 +63,11 @@ export interface DespesaPrevista {
   id: number
   nome: string
   valor: number
+  pagamento?: TipoPagamento
+  cartaoNome?: string
   recorrencia: TipoRecorrencia
+  ocorrenciasPorCiclo?: number
+  /** Campo legado, mantido para compatibilidade com dados já salvos. */
   restantes: number
 }
 

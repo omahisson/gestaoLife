@@ -48,7 +48,7 @@ export default function PainelTarefas({
   return (
     <div
       className="fixed left-1/2 -translate-x-1/2 w-full max-w-sm z-[15] transition-all duration-300 ease-out"
-      style={{ bottom: "92px" }}
+      style={{ bottom: 0 }}
     >
       <div className="bg-white rounded-t-3xl shadow-[0_-6px_32px_rgba(0,0,0,0.10)] overflow-hidden">
         <div className="flex justify-center pt-2.5 pb-0">
@@ -115,10 +115,12 @@ export default function PainelTarefas({
                   <p className="text-xs text-gray-600 mt-0.5 truncate">
                     {nota.titulo}
                     {exibindoIntervalo && bloco.data
-                      ? ` · ${new Date(`${bloco.data}T12:00:00`).toLocaleDateString(
-                          "pt-BR",
-                          { day: "2-digit", month: "2-digit" },
-                        )}`
+                      ? ` · ${new Date(
+                          `${bloco.data}T12:00:00`,
+                        ).toLocaleDateString("pt-BR", {
+                          day: "2-digit",
+                          month: "2-digit",
+                        })}`
                       : ""}
                     {bloco.hora ? ` · ${bloco.hora}` : ""}
                   </p>
@@ -137,6 +139,10 @@ export default function PainelTarefas({
             ))}
           </div>
         )}
+        <div
+          className="h-[92px] border-t border-gray-100 bg-white"
+          aria-hidden
+        />
       </div>
     </div>
   )
