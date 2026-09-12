@@ -280,6 +280,11 @@ export default function GestaoLifeApp({
   const [frequenciaNovaMeta, definirFrequenciaNovaMeta] = useState("")
   const campoNomeNovaMetaRef = useRef<HTMLInputElement>(null)
   const campoTituloNovaNotaRef = useRef<HTMLInputElement>(null)
+  const selecaoAntesDoRelogioRef = useRef<{
+    campoId: string
+    inicio: number
+    fim: number
+  } | null>(null)
 
   // Quebra de meta dialog
   const [informacoesQuebraMeta, definirInformacoesQuebraMeta] = useState<{
@@ -1067,6 +1072,35 @@ export default function GestaoLifeApp({
         bloco.id === blocoId ? { ...bloco, ...alteracoes } : bloco,
       ),
     )
+  }
+  function guardarSelecaoAntesDoRelogio(campoId: string) {
+    const campo = document.getElementById(campoId) as HTMLInputElement | null
+    if (!campo) return
+    const campoEstavaAtivo = document.activeElement === campo
+    const posicaoPadrao = campo.value.length
+    selecaoAntesDoRelogioRef.current = {
+      campoId,
+      inicio: campoEstavaAtivo
+        ? (campo.selectionStart ?? posicaoPadrao)
+        : posicaoPadrao,
+      fim: campoEstavaAtivo
+        ? (campo.selectionEnd ?? posicaoPadrao)
+        : posicaoPadrao,
+    }
+  }
+  function confirmarDataEVoltarAoTexto(campoId: string) {
+    definirBlocoEditandoData(null)
+    const selecao = selecaoAntesDoRelogioRef.current
+    window.setTimeout(() => {
+      const campo = document.getElementById(campoId) as HTMLInputElement | null
+      if (!campo) return
+      const posicaoPadrao = campo.value.length
+      const inicio =
+        selecao?.campoId === campoId ? selecao.inicio : posicaoPadrao
+      const fim = selecao?.campoId === campoId ? selecao.fim : posicaoPadrao
+      campo.focus({ preventScroll: true })
+      campo.setSelectionRange(inicio, fim)
+    }, 0)
   }
   function alternarFixacaoDaNota(notaId: number) {
     definirNotas((prev) =>
@@ -2076,6 +2110,11 @@ export default function GestaoLifeApp({
                                 />
                                 {/* Botão para abrir/fechar seletor de data */}
                                 <button
+                                  onPointerDown={() =>
+                                    guardarSelecaoAntesDoRelogio(
+                                      `bloco-${b.id}`,
+                                    )
+                                  }
                                   onClick={() => {
                                     const abrindoSeletor =
                                       blocoEditandoData !== b.id
@@ -2185,7 +2224,9 @@ export default function GestaoLifeApp({
                                   </div>
                                   <button
                                     onClick={() =>
-                                      definirBlocoEditandoData(null)
+                                      confirmarDataEVoltarAoTexto(
+                                        `bloco-${b.id}`,
+                                      )
                                     }
                                     className="w-full py-1.5 text-xs font-semibold bg-[#1A56DB] text-white rounded-xl"
                                   >
@@ -2496,6 +2537,9 @@ export default function GestaoLifeApp({
                                   }}
                                 />
                                 <button
+                                  onPointerDown={() =>
+                                    guardarSelecaoAntesDoRelogio(`nb-${b.id}`)
+                                  }
                                   onClick={() => {
                                     const abrindoSeletor =
                                       blocoEditandoData !== b.id
@@ -2571,7 +2615,7 @@ export default function GestaoLifeApp({
                                   </div>
                                   <button
                                     onClick={() =>
-                                      definirBlocoEditandoData(null)
+                                      confirmarDataEVoltarAoTexto(`nb-${b.id}`)
                                     }
                                     className="w-full py-1.5 text-xs font-semibold bg-[#1A56DB] text-white rounded-xl"
                                   >
@@ -3239,8 +3283,9 @@ export default function GestaoLifeApp({
                     <p className="mt-2 px-1 text-[10px] leading-relaxed text-gray-600">
                       {previsaoDoPadraoSelecionadoFoiConcluida ? (
                         <>
-                          A previsão deste ciclo já foi concluída. Esta despesa
-                          será registrada como avulsa.
+                          Todas as ocorrências de gasto previstas para este
+                          ciclo já foram registradas. Esta despesa será
+                          registrada como avulsa extra.
                         </>
                       ) : (
                         <>
