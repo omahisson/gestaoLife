@@ -49,6 +49,7 @@ export interface Meta {
 
 export interface Despesa {
   id: number
+  padraoId?: number
   nome: string
   valor: number
   data: string

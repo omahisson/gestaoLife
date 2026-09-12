@@ -73,6 +73,17 @@ function normalizarNome(nome: string) {
   return nome.trim().toLocaleLowerCase("pt-BR")
 }
 
+function despesaPertenceAoPadrao(
+  despesa: Despesa,
+  padrao: DespesaPrevista,
+) {
+  return (
+    despesa.padraoId === padrao.id ||
+    (despesa.padraoId == null &&
+      normalizarNome(despesa.nome) === normalizarNome(padrao.nome))
+  )
+}
+
 function obterTotalPrevistoNoCiclo(
   padrao: DespesaPrevista,
   quantidadeDiasDoCiclo: number,
@@ -331,29 +342,18 @@ export default function GestaoLifeApp({
   // A projeção é sempre derivada do padrão do ciclo. Não persistimos um saldo
   // mutável, evitando que excluir uma despesa infle a quantidade planejada.
   const gruposProjecao = useMemo(() => {
-    const recorrentes = despesasDoPeriodoInsights.filter(
-      (despesa) => despesa.recorrencia !== "avulsa",
-    )
-    const contagem = new Map<string, number>()
-    recorrentes.forEach((despesa) => {
-      const chave = `${normalizarNome(despesa.nome)}::${despesa.recorrencia}`
-      contagem.set(chave, (contagem.get(chave) ?? 0) + 1)
-    })
     return despesasPrevistas
       .map((padrao) => {
-        const chave = `${normalizarNome(padrao.nome)}::${padrao.recorrencia}`
-        const usadas = contagem.get(chave) ?? 0
+        const usadas = despesasDoPeriodoInsights.filter((despesa) =>
+          despesaPertenceAoPadrao(despesa, padrao),
+        ).length
         const totalPrevisto = obterTotalPrevistoNoCiclo(
           padrao,
           quantidadeDiasDoCiclo,
         )
         const restantes = Math.max(totalPrevisto - usadas, 0)
         const ultimaDespesa = [...despesas]
-          .filter(
-            (despesa) =>
-              normalizarNome(despesa.nome) === normalizarNome(padrao.nome) &&
-              despesa.recorrencia === padrao.recorrencia,
-          )
+          .filter((despesa) => despesaPertenceAoPadrao(despesa, padrao))
           .sort(
             (a, b) =>
               b.data.localeCompare(a.data) || Number(b.id) - Number(a.id),
@@ -429,38 +429,63 @@ export default function GestaoLifeApp({
       periodoFinanceiroAtual.diasDecorridos,
       quantidadeDiasDoCiclo,
     )
-    const itens = despesasPrevistas
-      .map((padrao) => {
-        const totalNoCiclo = obterTotalPrevistoNoCiclo(
-          padrao,
-          quantidadeDiasDoCiclo,
+    const categorias = new Map<
+      string,
+      {
+        nome: string
+        previsto: number
+        recorrencias: Set<TipoRecorrencia>
+        padroes: DespesaPrevista[]
+      }
+    >()
+    despesasPrevistas.forEach((padrao) => {
+      const totalNoCiclo = obterTotalPrevistoNoCiclo(
+        padrao,
+        quantidadeDiasDoCiclo,
+      )
+      let ocorrenciasAteHoje = totalNoCiclo
+      if (padrao.recorrencia === "diaria")
+        ocorrenciasAteHoje = Math.min(totalNoCiclo, diasDecorridos)
+      else if (padrao.recorrencia === "semanal")
+        ocorrenciasAteHoje = Math.min(
+          totalNoCiclo,
+          Math.ceil(diasDecorridos / 7),
         )
-        let ocorrenciasAteHoje = totalNoCiclo
-        if (padrao.recorrencia === "diaria")
-          ocorrenciasAteHoje = Math.min(totalNoCiclo, diasDecorridos)
-        else if (padrao.recorrencia === "semanal")
-          ocorrenciasAteHoje = Math.min(
-            totalNoCiclo,
-            Math.ceil(diasDecorridos / 7),
-          )
-        else if (padrao.recorrencia === "personalizada")
-          ocorrenciasAteHoje = Math.min(
-            totalNoCiclo,
-            Math.ceil((totalNoCiclo * diasDecorridos) / quantidadeDiasDoCiclo),
-          )
-        const previsto = padrao.valor * ocorrenciasAteHoje
+      else if (padrao.recorrencia === "personalizada")
+        ocorrenciasAteHoje = Math.min(
+          totalNoCiclo,
+          Math.ceil((totalNoCiclo * diasDecorridos) / quantidadeDiasDoCiclo),
+        )
+      const chave = normalizarNome(padrao.nome)
+      const categoria = categorias.get(chave) ?? {
+        nome: padrao.nome,
+        previsto: 0,
+        recorrencias: new Set<TipoRecorrencia>(),
+        padroes: [],
+      }
+      categoria.previsto += padrao.valor * ocorrenciasAteHoje
+      categoria.recorrencias.add(padrao.recorrencia)
+      categoria.padroes.push(padrao)
+      categorias.set(chave, categoria)
+    })
+    const itens = [...categorias.entries()]
+      .map(([, categoria]) => {
         const real = despesasDoPeriodoInsights
-          .filter(
-            (despesa) =>
-              normalizarNome(despesa.nome) === normalizarNome(padrao.nome) &&
-              despesa.recorrencia === padrao.recorrencia,
+          .filter((despesa) =>
+            categoria.padroes.some((padrao) =>
+              despesaPertenceAoPadrao(despesa, padrao),
+            ),
           )
           .reduce((total, despesa) => total + despesa.valor, 0)
-        const diff = real - previsto
+        const recorrencias = [...categoria.recorrencias]
+        const diff = real - categoria.previsto
         return {
-          nome: padrao.nome,
-          recorrencia: padrao.recorrencia,
-          previsto,
+          nome: categoria.nome,
+          rotuloRecorrencia:
+            recorrencias.length === 1
+              ? ROTULOS_RECORRENCIA[recorrencias[0]]
+              : "Padrões combinados",
+          previsto: categoria.previsto,
           real,
           diff,
         }
@@ -666,6 +691,10 @@ export default function GestaoLifeApp({
   }
   function salvarEdicaoDaPrevisao() {
     if (identificadorPrevisaoEmEdicao == null) return
+    const padraoAnterior = despesasPrevistas.find(
+      (padrao) => padrao.id === identificadorPrevisaoEmEdicao,
+    )
+    if (!padraoAnterior) return
     const nome = nomePrevisaoEmEdicao.trim()
     const v = parseFloat(valorPrevisaoEmEdicao.replace(",", "."))
     if (
@@ -677,6 +706,12 @@ export default function GestaoLifeApp({
           !cartoes.includes(cartaoPrevisaoEmEdicao)))
     )
       return
+    const nomeJaUsado = despesasPrevistas.some(
+      (padrao) =>
+        padrao.id !== identificadorPrevisaoEmEdicao &&
+        normalizarNome(padrao.nome) === normalizarNome(nome),
+    )
+    if (nomeJaUsado) return
     const totalPrevisto = obterTotalPrevistoNoCiclo(
       {
         id: identificadorPrevisaoEmEdicao,
@@ -718,10 +753,37 @@ export default function GestaoLifeApp({
           : p,
       ),
     )
+    definirDespesas((prev) =>
+      prev.map((despesa) =>
+        despesaPertenceAoPadrao(despesa, padraoAnterior)
+          ? {
+              ...despesa,
+              padraoId: identificadorPrevisaoEmEdicao,
+              nome,
+            }
+          : despesa,
+      ),
+    )
+    definirMetas((prev) =>
+      prev.map((meta) =>
+        meta.despesaVinculadaNome &&
+        normalizarNome(meta.despesaVinculadaNome) ===
+          normalizarNome(padraoAnterior.nome)
+          ? { ...meta, despesaVinculadaNome: nome }
+          : meta,
+      ),
+    )
     definirIdentificadorPrevisaoEmEdicao(null)
   }
   function excluirPrevisao(id: number) {
     definirDespesasPrevistas((prev) => prev.filter((p) => p.id !== id))
+    definirDespesas((prev) =>
+      prev.map((despesa) =>
+        despesa.padraoId === id
+          ? { ...despesa, padraoId: undefined }
+          : despesa,
+      ),
+    )
     if (identificadorPrevisaoEmEdicao === id)
       definirIdentificadorPrevisaoEmEdicao(null)
   }
@@ -1085,55 +1147,66 @@ export default function GestaoLifeApp({
       recorrencia === "personalizada"
         ? parseInt(ocorrenciasPersonalizadas)
         : undefined
-    if (recorrencia !== "avulsa") {
-      const existe = despesasPrevistas.some(
-        (padrao) => normalizarNome(padrao.nome) === normalizarNome(nomeDespesa),
+    const nomeFinal = nomeDespesa.trim()
+    const padraoExistente = despesasPrevistas.find(
+      (padrao) => normalizarNome(padrao.nome) === normalizarNome(nomeFinal),
+    )
+    let padraoVinculadoId = padraoExistente?.id
+    if (recorrencia !== "avulsa" && !padraoExistente) {
+      const pid = gerarProximoIdentificador()
+      padraoVinculadoId = pid
+      const totalPrevisto = obterTotalPrevistoNoCiclo(
+        {
+          id: pid,
+          nome: nomeFinal,
+          valor: v,
+          pagamento,
+          cartaoNome: pagamento === "cartao" ? cartaoSelecionado : undefined,
+          recorrencia,
+          ocorrenciasPorCiclo: occ,
+          restantes: occ ?? 1,
+        },
+        quantidadeDiasDoCiclo,
       )
-      if (!existe) {
-        const pid = gerarProximoIdentificador()
-        const totalPrevisto = obterTotalPrevistoNoCiclo(
-          {
-            id: pid,
-            nome: nomeDespesa.trim(),
-            valor: v,
-            pagamento,
-            cartaoNome: pagamento === "cartao" ? cartaoSelecionado : undefined,
-            recorrencia,
-            ocorrenciasPorCiclo: occ,
-            restantes: occ ?? 1,
-          },
-          quantidadeDiasDoCiclo,
-        )
-        definirDespesasPrevistas((prev) => [
-          ...prev,
-          {
-            id: pid,
-            nome: nomeDespesa.trim(),
-            valor: v,
-            pagamento,
-            cartaoNome: pagamento === "cartao" ? cartaoSelecionado : undefined,
-            recorrencia,
-            ocorrenciasPorCiclo: occ,
-            restantes: totalPrevisto,
-          },
-        ])
-      }
+      definirDespesasPrevistas((prev) => [
+        ...prev,
+        {
+          id: pid,
+          nome: nomeFinal,
+          valor: v,
+          pagamento,
+          cartaoNome: pagamento === "cartao" ? cartaoSelecionado : undefined,
+          recorrencia,
+          ocorrenciasPorCiclo: occ,
+          restantes: totalPrevisto,
+        },
+      ])
     }
     const did = gerarProximoIdentificador()
-    definirDespesas((prev) => [
-      ...prev,
-      {
-        id: did,
-        nome: nomeDespesa.trim(),
-        valor: v,
-        data: dataDespesa,
-        pagamento,
-        cartaoNome: pagamento === "cartao" ? cartaoSelecionado : undefined,
-        recorrencia,
-        ocorrenciasRestantes: occ,
-      },
-    ])
-    const nomeExp = nomeDespesa.trim()
+    definirDespesas((prev) => {
+      const despesasVinculadas = padraoVinculadoId
+        ? prev.map((despesa) =>
+            normalizarNome(despesa.nome) === normalizarNome(nomeFinal)
+              ? { ...despesa, padraoId: padraoVinculadoId }
+              : despesa,
+          )
+        : prev
+      return [
+        ...despesasVinculadas,
+        {
+          id: did,
+          padraoId: padraoVinculadoId,
+          nome: nomeFinal,
+          valor: v,
+          data: dataDespesa,
+          pagamento,
+          cartaoNome: pagamento === "cartao" ? cartaoSelecionado : undefined,
+          recorrencia,
+          ocorrenciasRestantes: occ,
+        },
+      ]
+    })
+    const nomeExp = nomeFinal
     fecharModal()
     // Check for meta match after saving
     const metaRelacionada = metas.find(
@@ -2989,17 +3062,57 @@ export default function GestaoLifeApp({
                   )}
                 </div>
                 {padraoSelecionado ? (
-                  <div className="bg-gray-50 border border-gray-100 rounded-2xl px-4 py-3.5 flex items-start gap-3">
-                    <div className="flex-1">
-                      <p className="text-[11px] text-gray-600 font-semibold uppercase tracking-widest mb-0.5">
-                        Recorrência
-                      </p>
-                      <p className="text-sm font-semibold text-gray-700">
-                        {ROTULOS_RECORRENCIA[padraoSelecionado.recorrencia]}
-                      </p>
+                  <div>
+                    <p className="text-[11px] text-gray-600 font-semibold uppercase tracking-widest mb-2">
+                      Como registrar
+                    </p>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          definirRecorrencia(padraoSelecionado.recorrencia)
+                          if (padraoSelecionado.recorrencia === "personalizada")
+                            definirOcorrenciasPersonalizadas(
+                              String(
+                                obterTotalPrevistoNoCiclo(
+                                  padraoSelecionado,
+                                  quantidadeDiasDoCiclo,
+                                ),
+                              ),
+                            )
+                          definirErroNovaDespesa("")
+                        }}
+                        className={`rounded-xl px-3 py-3 text-left transition-all ${
+                          recorrencia === padraoSelecionado.recorrencia
+                            ? "bg-black text-white"
+                            : "bg-gray-100 text-gray-600"
+                        }`}
+                      >
+                        <span className="block text-xs font-bold">Padrão</span>
+                        <span className="mt-0.5 block text-[10px] opacity-75">
+                          {ROTULOS_RECORRENCIA[padraoSelecionado.recorrencia]}
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          definirRecorrencia("avulsa")
+                          definirErroNovaDespesa("")
+                        }}
+                        className={`rounded-xl px-3 py-3 text-left transition-all ${
+                          recorrencia === "avulsa"
+                            ? "bg-black text-white"
+                            : "bg-gray-100 text-gray-600"
+                        }`}
+                      >
+                        <span className="block text-xs font-bold">Avulsa</span>
+                        <span className="mt-0.5 block text-[10px] opacity-75">
+                          gasto extra
+                        </span>
+                      </button>
                     </div>
-                    <p className="text-[10px] text-gray-600 leading-snug text-right max-w-[140px] mt-0.5">
-                      Para alterar, edite o padrão em{" "}
+                    <p className="mt-2 px-1 text-[10px] leading-relaxed text-gray-600">
+                      Para alterar a recorrência principal, edite o padrão em{" "}
                       <span className="font-semibold">Insights → Projeção</span>
                       .
                     </p>
@@ -3386,7 +3499,7 @@ export default function GestaoLifeApp({
                               {item.nome}
                             </p>
                             <p className="text-[10px] text-gray-600 mt-0.5">
-                              {ROTULOS_RECORRENCIA[item.recorrencia]}
+                              {item.rotuloRecorrencia}
                             </p>
                           </div>
                           <div
@@ -3655,13 +3768,19 @@ export default function GestaoLifeApp({
                                         "personalizada"
                                       ? customOcc
                                       : 0
+                            const padraoAtual = despesasPrevistas.find(
+                              (padrao) => padrao.id === g.id,
+                            )
                             const usadasNoPadraoEditado =
                               despesasDoPeriodoInsights.filter(
                                 (despesa) =>
-                                  normalizarNome(despesa.nome) ===
-                                    normalizarNome(nomePrevisaoEmEdicao) &&
-                                  despesa.recorrencia ===
-                                    recorrenciaPrevisaoEmEdicao,
+                                  padraoAtual
+                                    ? despesaPertenceAoPadrao(
+                                        despesa,
+                                        padraoAtual,
+                                      )
+                                    : normalizarNome(despesa.nome) ===
+                                      normalizarNome(g.nome),
                               ).length
                             const ocorrenciasRestantes = Math.max(
                               occ - usadasNoPadraoEditado,
@@ -3832,9 +3951,10 @@ export default function GestaoLifeApp({
                                 )}
 
                                 <p className="text-[11px] leading-5 text-gray-500 px-1">
-                                  A alteração vale para novos lançamentos. As
-                                  despesas já registradas mantêm os dados do
-                                  momento em que foram criadas.
+                                  Ao alterar o nome, as despesas ligadas a este
+                                  padrão também são renomeadas. Valor,
+                                  pagamento e recorrência passam a valer nos
+                                  próximos lançamentos.
                                 </p>
 
                                 <div className="flex gap-2">
