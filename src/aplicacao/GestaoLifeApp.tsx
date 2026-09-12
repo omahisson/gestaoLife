@@ -73,10 +73,7 @@ function normalizarNome(nome: string) {
   return nome.trim().toLocaleLowerCase("pt-BR")
 }
 
-function despesaPertenceAoPadrao(
-  despesa: Despesa,
-  padrao: DespesaPrevista,
-) {
+function despesaPertenceAoPadrao(despesa: Despesa, padrao: DespesaPrevista) {
   return (
     despesa.padraoId === padrao.id ||
     (despesa.padraoId == null &&
@@ -183,9 +180,8 @@ export default function GestaoLifeApp({
   const [valorEdicaoDespesa, definirValorEdicaoDespesa] = useState("")
   const [pagamentoEdicaoDespesa, definirPagamentoEdicaoDespesa] =
     useState<TipoPagamento>("pix")
-  const [cartaoEdicaoDespesa, definirCartaoEdicaoDespesa] = useState<
-    number | null
-  >(null)
+  const [cartaoEdicaoDespesa, definirCartaoEdicaoDespesa] =
+    useState<number | null>(null)
   const [recorrenciaEdicaoDespesa, definirRecorrenciaEdicaoDespesa] =
     useState<TipoRecorrencia>("avulsa")
 
@@ -196,9 +192,8 @@ export default function GestaoLifeApp({
   const [nomePrevisaoEmEdicao, definirNomePrevisaoEmEdicao] = useState("")
   const [pagamentoPrevisaoEmEdicao, definirPagamentoPrevisaoEmEdicao] =
     useState<TipoPagamento>("pix")
-  const [cartaoPrevisaoEmEdicao, definirCartaoPrevisaoEmEdicao] = useState<
-    number | null
-  >(null)
+  const [cartaoPrevisaoEmEdicao, definirCartaoPrevisaoEmEdicao] =
+    useState<number | null>(null)
   const [recorrenciaPrevisaoEmEdicao, definirRecorrenciaPrevisaoEmEdicao] =
     useState<TipoRecorrencia>("mensal")
   const [
@@ -467,15 +462,12 @@ export default function GestaoLifeApp({
       periodoFinanceiroAtual.diasDecorridos,
       quantidadeDiasDoCiclo,
     )
-    const categorias = new Map<
-      string,
-      {
-        nome: string
-        previsto: number
-        recorrencias: Set<TipoRecorrencia>
-        padroes: DespesaPrevista[]
-      }
-    >()
+    const categorias = new Map<string, {
+      nome: string
+      previsto: number
+      recorrencias: Set<TipoRecorrencia>
+      padroes: DespesaPrevista[]
+    }>()
     despesasPrevistas.forEach((padrao) => {
       const totalNoCiclo = obterTotalPrevistoNoCiclo(
         padrao,
@@ -751,8 +743,7 @@ export default function GestaoLifeApp({
       !nome ||
       isNaN(v) ||
       v <= 0 ||
-      (pagamentoPrevisaoEmEdicao === "cartao" &&
-        !cartaoDoPadrao)
+      (pagamentoPrevisaoEmEdicao === "cartao" && !cartaoDoPadrao)
     )
       return
     const nomeJaUsado = despesasPrevistas.some(
@@ -836,9 +827,7 @@ export default function GestaoLifeApp({
     definirDespesasPrevistas((prev) => prev.filter((p) => p.id !== id))
     definirDespesas((prev) =>
       prev.map((despesa) =>
-        despesa.padraoId === id
-          ? { ...despesa, padraoId: undefined }
-          : despesa,
+        despesa.padraoId === id ? { ...despesa, padraoId: undefined } : despesa,
       ),
     )
     if (identificadorPrevisaoEmEdicao === id)
@@ -1152,9 +1141,7 @@ export default function GestaoLifeApp({
     const cartaoRefId = prev?.cartaoId ?? ref?.cartaoId
     if (pagamentoRef) {
       definirPagamento(pagamentoRef)
-      const cartaoAtivo = cartoes.find(
-        (cartao) => cartao.id === cartaoRefId,
-      )
+      const cartaoAtivo = cartoes.find((cartao) => cartao.id === cartaoRefId)
       definirCartaoSelecionado(
         pagamentoRef === "cartao"
           ? (cartaoAtivo?.id ?? cartoes[0]?.id ?? null)
@@ -1162,8 +1149,16 @@ export default function GestaoLifeApp({
       )
     }
     if (prev) {
+      const quantidadeRegistradaNoCiclo = despesasDoCicloAtual.filter(
+        (despesa) => despesaPertenceAoPadrao(despesa, prev),
+      ).length
+      const previsaoDoPadraoFoiConcluida =
+        quantidadeRegistradaNoCiclo >=
+        obterTotalPrevistoNoCiclo(prev, quantidadeDiasDoCiclo)
       definirPadraoSelecionadoId(prev.id)
-      definirRecorrencia(prev.recorrencia)
+      definirRecorrencia(
+        previsaoDoPadraoFoiConcluida ? "avulsa" : prev.recorrencia,
+      )
       if (prev.recorrencia === "personalizada")
         definirOcorrenciasPersonalizadas(
           String(obterTotalPrevistoNoCiclo(prev, quantidadeDiasDoCiclo)),
@@ -1315,12 +1310,8 @@ export default function GestaoLifeApp({
   }
   function removerCartao(cartaoId: number) {
     definirCartoes((prev) => prev.filter((cartao) => cartao.id !== cartaoId))
-    definirCartaoSelecionado((atual) =>
-      atual === cartaoId ? null : atual,
-    )
-    definirCartaoEdicaoDespesa((atual) =>
-      atual === cartaoId ? null : atual,
-    )
+    definirCartaoSelecionado((atual) => (atual === cartaoId ? null : atual))
+    definirCartaoEdicaoDespesa((atual) => (atual === cartaoId ? null : atual))
     definirCartaoPrevisaoEmEdicao((atual) =>
       atual === cartaoId ? null : atual,
     )
@@ -1363,9 +1354,7 @@ export default function GestaoLifeApp({
 
   // ── Diferença previsão vs realidade ────────────────────────────────────
   const diferencaPrevisao =
-    statusPeriodo === "atual"
-      ? gastoRealComparativo - previsaoAteHoje
-      : null
+    statusPeriodo === "atual" ? gastoRealComparativo - previsaoAteHoje : null
   const dataInicialTarefasSelecionadas =
     visao === "semanal"
       ? formatarDataIso(diaSelecionado)
@@ -1411,9 +1400,12 @@ export default function GestaoLifeApp({
             Math.max(totalPrevisto - despesasRegistradas.length, 0),
           gastoNoCiclo,
           gastoComNovaDespesa: gastoNoCiclo + valorDaNovaDespesa,
+          previsaoConcluida: despesasRegistradas.length >= totalPrevisto,
         }
       })()
     : null
+  const previsaoDoPadraoSelecionadoFoiConcluida =
+    resumoDoPadraoSelecionado?.previsaoConcluida ?? false
 
   // ── Render ─────────────────────────────────────────────────────────────
   if (!dadosCarregados) {
@@ -1846,9 +1838,11 @@ export default function GestaoLifeApp({
                           type="text"
                           value={bloco.texto}
                           placeholder={
+                            notaAberta.blocos.length === 1 &&
                             notaAberta.blocos.every(
                               (item) => !item.texto.trim(),
-                            ) && notaAberta.blocos[0]?.id === bloco.id
+                            ) &&
+                            notaAberta.blocos[0]?.id === bloco.id
                               ? "Escreva algo…"
                               : undefined
                           }
@@ -2082,11 +2076,27 @@ export default function GestaoLifeApp({
                                 />
                                 {/* Botão para abrir/fechar seletor de data */}
                                 <button
-                                  onClick={() =>
+                                  onClick={() => {
+                                    const abrindoSeletor =
+                                      blocoEditandoData !== b.id
+                                    if (abrindoSeletor && !b.data) {
+                                      const bid = b.id
+                                      atualizarNota((prev) => ({
+                                        ...prev,
+                                        blocos: prev.blocos.map((x) =>
+                                          x.id === bid
+                                            ? {
+                                                ...x,
+                                                data: formatarDataIso(HOJE),
+                                              }
+                                            : x,
+                                        ),
+                                      }))
+                                    }
                                     definirBlocoEditandoData(
-                                      blocoEditandoData === b.id ? null : b.id,
+                                      abrindoSeletor ? b.id : null,
                                     )
-                                  }
+                                  }}
                                   className={`p-1 rounded-lg transition-colors shrink-0 ${
                                     b.data
                                       ? "text-[#3B82F6]"
@@ -2274,7 +2284,11 @@ export default function GestaoLifeApp({
                           id={`nb-${bloco.id}`}
                           type="text"
                           value={bloco.texto}
-                          placeholder={isFirst ? "Escreva algo…" : undefined}
+                          placeholder={
+                            isFirst && blocosNovaNota.length === 1
+                              ? "Escreva algo…"
+                              : undefined
+                          }
                           className="bg-transparent text-sm text-gray-600 outline-none w-full placeholder:text-gray-500"
                           onChange={(e) => {
                             const val = e.target.value
@@ -2482,11 +2496,17 @@ export default function GestaoLifeApp({
                                   }}
                                 />
                                 <button
-                                  onClick={() =>
+                                  onClick={() => {
+                                    const abrindoSeletor =
+                                      blocoEditandoData !== b.id
+                                    if (abrindoSeletor && !b.data)
+                                      atualizarBlocoDaNovaNota(b.id, {
+                                        data: formatarDataIso(HOJE),
+                                      })
                                     definirBlocoEditandoData(
-                                      blocoEditandoData === b.id ? null : b.id,
+                                      abrindoSeletor ? b.id : null,
                                     )
-                                  }
+                                  }}
                                   className={`p-1 rounded-lg transition-colors shrink-0 ${
                                     b.data
                                       ? "text-[#3B82F6]"
@@ -3171,6 +3191,7 @@ export default function GestaoLifeApp({
                     <div className="grid grid-cols-2 gap-2">
                       <button
                         type="button"
+                        disabled={previsaoDoPadraoSelecionadoFoiConcluida}
                         onClick={() => {
                           definirRecorrencia(padraoSelecionado.recorrencia)
                           if (padraoSelecionado.recorrencia === "personalizada")
@@ -3185,9 +3206,11 @@ export default function GestaoLifeApp({
                           definirErroNovaDespesa("")
                         }}
                         className={`rounded-xl px-3 py-3 text-left transition-all ${
-                          recorrencia === padraoSelecionado.recorrencia
-                            ? "bg-black text-white"
-                            : "bg-gray-100 text-gray-600"
+                          previsaoDoPadraoSelecionadoFoiConcluida
+                            ? "cursor-not-allowed bg-gray-100 text-gray-400 opacity-60"
+                            : recorrencia === padraoSelecionado.recorrencia
+                              ? "bg-black text-white"
+                              : "bg-gray-100 text-gray-600"
                         }`}
                       >
                         <span className="block text-xs font-bold">Padrão</span>
@@ -3214,9 +3237,21 @@ export default function GestaoLifeApp({
                       </button>
                     </div>
                     <p className="mt-2 px-1 text-[10px] leading-relaxed text-gray-600">
-                      Para alterar a recorrência principal, edite o padrão em{" "}
-                      <span className="font-semibold">Insights → Projeção</span>
-                      .
+                      {previsaoDoPadraoSelecionadoFoiConcluida ? (
+                        <>
+                          A previsão deste ciclo já foi concluída. Esta despesa
+                          será registrada como avulsa.
+                        </>
+                      ) : (
+                        <>
+                          Para alterar a recorrência principal, edite o padrão
+                          em{" "}
+                          <span className="font-semibold">
+                            Insights → Projeção
+                          </span>
+                          .
+                        </>
+                      )}
                     </p>
                   </div>
                 ) : (
@@ -3270,7 +3305,7 @@ export default function GestaoLifeApp({
                 {resumoDoPadraoSelecionado && (
                   <div className="rounded-2xl border border-gray-100 bg-gray-50 p-3">
                     <p className="mb-2 px-1 text-[10px] font-semibold uppercase tracking-widest text-gray-600">
-                      Resumo do ciclo
+                      Resumo da despesa
                     </p>
                     <div className="grid grid-cols-2 gap-2">
                       <div className="min-h-[62px] rounded-xl bg-white px-2 py-2.5 text-center">
@@ -3280,16 +3315,6 @@ export default function GestaoLifeApp({
                         <p className="mt-1 text-xs font-extrabold text-[#1A56DB]">
                           {formatarMoeda(
                             resumoDoPadraoSelecionado.previsaoDoCiclo,
-                          )}
-                        </p>
-                      </div>
-                      <div className="min-h-[62px] rounded-xl bg-white px-2 py-2.5 text-center">
-                        <p className="text-[9px] leading-tight text-gray-500">
-                          Ainda previsto
-                        </p>
-                        <p className="mt-1 text-xs font-extrabold text-orange-600">
-                          {formatarMoeda(
-                            resumoDoPadraoSelecionado.aindaPrevisto,
                           )}
                         </p>
                       </div>
@@ -3307,6 +3332,16 @@ export default function GestaoLifeApp({
                         >
                           {formatarMoeda(
                             resumoDoPadraoSelecionado.gastoNoCiclo,
+                          )}
+                        </p>
+                      </div>
+                      <div className="min-h-[62px] rounded-xl bg-white px-2 py-2.5 text-center">
+                        <p className="text-[9px] leading-tight text-gray-500">
+                          Ainda previsto
+                        </p>
+                        <p className="mt-1 text-xs font-extrabold text-orange-600">
+                          {formatarMoeda(
+                            resumoDoPadraoSelecionado.aindaPrevisto,
                           )}
                         </p>
                       </div>
@@ -3542,9 +3577,7 @@ export default function GestaoLifeApp({
                             {cartoes.map((c) => (
                               <button
                                 key={c.id}
-                                onClick={() =>
-                                  definirCartaoEdicaoDespesa(c.id)
-                                }
+                                onClick={() => definirCartaoEdicaoDespesa(c.id)}
                                 className={`flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl text-left transition-all ${
                                   cartaoEdicaoDespesa === c.id
                                     ? "bg-[#1A56DB] text-white"
@@ -3941,15 +3974,14 @@ export default function GestaoLifeApp({
                               (padrao) => padrao.id === g.id,
                             )
                             const usadasNoPadraoEditado =
-                              despesasDoPeriodoInsights.filter(
-                                (despesa) =>
-                                  padraoAtual
-                                    ? despesaPertenceAoPadrao(
-                                        despesa,
-                                        padraoAtual,
-                                      )
-                                    : normalizarNome(despesa.nome) ===
-                                      normalizarNome(g.nome),
+                              despesasDoPeriodoInsights.filter((despesa) =>
+                                padraoAtual
+                                  ? despesaPertenceAoPadrao(
+                                      despesa,
+                                      padraoAtual,
+                                    )
+                                  : normalizarNome(despesa.nome) ===
+                                    normalizarNome(g.nome),
                               ).length
                             const ocorrenciasRestantes = Math.max(
                               occ - usadasNoPadraoEditado,
@@ -4122,9 +4154,9 @@ export default function GestaoLifeApp({
 
                                 <p className="text-[11px] leading-5 text-gray-500 px-1">
                                   Ao alterar o nome, as despesas ligadas a este
-                                  padrão também são renomeadas. Valor,
-                                  pagamento e recorrência passam a valer nos
-                                  próximos lançamentos.
+                                  padrão também são renomeadas. Valor, pagamento
+                                  e recorrência passam a valer nos próximos
+                                  lançamentos.
                                 </p>
 
                                 <div className="flex gap-2">
