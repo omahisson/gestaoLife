@@ -1089,18 +1089,18 @@ export default function GestaoLifeApp({
     }
   }
   function confirmarDataEVoltarAoTexto(campoId: string) {
-    definirBlocoEditandoData(null)
     const selecao = selecaoAntesDoRelogioRef.current
-    window.setTimeout(() => {
-      const campo = document.getElementById(campoId) as HTMLInputElement | null
-      if (!campo) return
+    const campo = document.getElementById(campoId) as HTMLInputElement | null
+    if (campo) {
       const posicaoPadrao = campo.value.length
       const inicio =
         selecao?.campoId === campoId ? selecao.inicio : posicaoPadrao
       const fim = selecao?.campoId === campoId ? selecao.fim : posicaoPadrao
       campo.focus({ preventScroll: true })
       campo.setSelectionRange(inicio, fim)
-    }, 0)
+    }
+    selecaoAntesDoRelogioRef.current = null
+    definirBlocoEditandoData(null)
   }
   function alternarFixacaoDaNota(notaId: number) {
     definirNotas((prev) =>
