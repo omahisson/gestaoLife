@@ -55,7 +55,7 @@ export default function NavegacaoPrincipal({
   aoCriarDespesa,
 }: PropriedadesNavegacaoPrincipal) {
   return (
-    <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-sm z-[16] px-5 pb-7 pointer-events-none">
+    <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-sm z-[16] px-5 pointer-events-none">
       <div className="bg-gray-950 rounded-full flex items-center justify-between px-2 py-2 shadow-2xl pointer-events-auto">
         <ItemNavegacao
           aba="inicio"

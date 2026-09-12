@@ -67,6 +67,18 @@ a,
   animation: sheet-slide-up 320ms cubic-bezier(0.32, 0.72, 0, 1) both;
 }
 
+/* Mantém formulários com foco dentro da área realmente visível no iOS. */
+.sheet-backdrop-com-teclado {
+  top: var(--topo-area-visual, 0px);
+  bottom: auto;
+  height: var(--altura-area-visual, 100dvh);
+}
+
+.sheet-panel-com-teclado {
+  max-height: calc(var(--altura-area-visual, 100dvh) - 8px) !important;
+  overscroll-behavior: contain;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .sheet-panel {
     animation: fade-in 180ms ease-out both;

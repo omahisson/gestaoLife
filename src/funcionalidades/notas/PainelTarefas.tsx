@@ -139,10 +139,7 @@ export default function PainelTarefas({
             ))}
           </div>
         )}
-        <div
-          className="h-[92px] bg-white"
-          aria-hidden
-        />
+        <div className="h-16 bg-white" aria-hidden />
       </div>
     </div>
   )

@@ -92,22 +92,35 @@ function useCampoVisivelAoAbrir(
     const campo = aberto ? campoRef.current : null
     if (!campo) return
 
-    const manterVisivel = () => {
-      requestAnimationFrame(() => {
-        campo.focus({ preventScroll: true })
-        campo.scrollIntoView({ block: "center", behavior: "auto" })
-      })
+    const elementoRaiz = document.documentElement
+    const viewport = window.visualViewport
+    const atualizarAreaVisual = () => {
+      elementoRaiz.style.setProperty(
+        "--altura-area-visual",
+        `${viewport?.height ?? window.innerHeight}px`,
+      )
+      elementoRaiz.style.setProperty(
+        "--topo-area-visual",
+        `${viewport?.offsetTop ?? 0}px`,
+      )
     }
-    const temporizadores = [
-      window.setTimeout(manterVisivel, 0),
-      window.setTimeout(manterVisivel, 360),
-      window.setTimeout(manterVisivel, 720),
-    ]
-    window.visualViewport?.addEventListener("resize", manterVisivel)
+
+    atualizarAreaVisual()
+    const quadroDoFoco = requestAnimationFrame(() => {
+      campo.focus({ preventScroll: true })
+      atualizarAreaVisual()
+    })
+    viewport?.addEventListener("resize", atualizarAreaVisual)
+    viewport?.addEventListener("scroll", atualizarAreaVisual)
+    window.addEventListener("resize", atualizarAreaVisual)
 
     return () => {
-      temporizadores.forEach(window.clearTimeout)
-      window.visualViewport?.removeEventListener("resize", manterVisivel)
+      cancelAnimationFrame(quadroDoFoco)
+      viewport?.removeEventListener("resize", atualizarAreaVisual)
+      viewport?.removeEventListener("scroll", atualizarAreaVisual)
+      window.removeEventListener("resize", atualizarAreaVisual)
+      elementoRaiz.style.removeProperty("--altura-area-visual")
+      elementoRaiz.style.removeProperty("--topo-area-visual")
     }
   }, [aberto, campoRef])
 }
@@ -227,7 +240,7 @@ export default function GestaoLifeApp({
   const [comparativoAberto, definirComparativoAberto] = useState(false)
 
   // ── Vida — segmento ────────────────────────────────────────────────────
-  const [segmentoVida, definirSegmentoVida] = useState<SegmentoVida>("metas")
+  const [segmentoVida, definirSegmentoVida] = useState<SegmentoVida>("notas")
 
   // ── Notas ───────────────────────────────────────────────────────────────
   const [blocoEditandoData, definirBlocoEditandoData] = useState<number | null>(
@@ -1122,6 +1135,7 @@ export default function GestaoLifeApp({
     definirSugestoes(obterSugestoesRecentes(valor))
   }
   function selecionarSugestao(nome: string) {
+    campoNomeNovaDespesaRef.current?.blur()
     const chave = normalizarNome(nome)
     const prev = despesasPrevistas.find(
       (padrao) => normalizarNome(padrao.nome) === chave,
@@ -1142,7 +1156,9 @@ export default function GestaoLifeApp({
         (cartao) => cartao.id === cartaoRefId,
       )
       definirCartaoSelecionado(
-        pagamentoRef === "cartao" ? (cartaoAtivo?.id ?? null) : null,
+        pagamentoRef === "cartao"
+          ? (cartaoAtivo?.id ?? cartoes[0]?.id ?? null)
+          : null,
       )
     }
     if (prev) {
@@ -1379,15 +1395,22 @@ export default function GestaoLifeApp({
           padraoSelecionado,
           quantidadeDiasDoCiclo,
         )
+        const previsaoDoCiclo = padraoSelecionado.valor * totalPrevisto
+        const gastoNoCiclo = despesasRegistradas.reduce(
+          (total, despesa) => total + despesa.valor,
+          0,
+        )
+        const valorDaNovaDespesa = Math.max(
+          parseFloat(valorDespesa.replace(",", ".")) || 0,
+          0,
+        )
         return {
-          previsaoDoCiclo: padraoSelecionado.valor * totalPrevisto,
+          previsaoDoCiclo,
           aindaPrevisto:
             padraoSelecionado.valor *
             Math.max(totalPrevisto - despesasRegistradas.length, 0),
-          gastoNoCiclo: despesasRegistradas.reduce(
-            (total, despesa) => total + despesa.valor,
-            0,
-          ),
+          gastoNoCiclo,
+          gastoComNovaDespesa: gastoNoCiclo + valorDaNovaDespesa,
         }
       })()
     : null
@@ -1572,7 +1595,7 @@ export default function GestaoLifeApp({
           onClick={abrirModalNota}
           className="fixed z-10 bg-white border border-gray-200 text-gray-600 rounded-2xl shadow-md hover:shadow-lg hover:bg-gray-50 transition-all active:scale-95 flex items-center justify-center"
           style={{
-            bottom: "98px",
+            bottom: "70px",
             right: "20px",
             width: "46px",
             height: "46px",
@@ -2188,7 +2211,7 @@ export default function GestaoLifeApp({
         {/* ══════════════ MODAL NOVA NOTA ══════════════ */}
         {modalNovaNotaAberta && (
           <div
-            className="fixed inset-0 bg-black/50 z-20 flex items-end justify-center sheet-backdrop"
+            className="fixed inset-0 bg-black/50 z-20 flex items-end justify-center sheet-backdrop sheet-backdrop-com-teclado"
             onClick={(e) => {
               if (e.target === e.currentTarget) {
                 definirModalNovaNotaAberta(false)
@@ -2197,7 +2220,7 @@ export default function GestaoLifeApp({
             }}
           >
             <div
-              className="sheet-panel w-full max-w-sm bg-white rounded-t-3xl flex flex-col"
+              className="sheet-panel sheet-panel-com-teclado w-full max-w-sm bg-white rounded-t-3xl flex flex-col"
               style={{ maxHeight: "94dvh" }}
             >
               <div className="flex-shrink-0 flex items-center justify-between px-5 pt-5 pb-3">
@@ -2601,13 +2624,13 @@ export default function GestaoLifeApp({
         {/* ══════════════ MODAL NOVA META ══════════════ */}
         {modalNovaMetaAberta && (
           <div
-            className="fixed inset-0 bg-black/50 z-20 flex items-end justify-center sheet-backdrop"
+            className="fixed inset-0 bg-black/50 z-20 flex items-end justify-center sheet-backdrop sheet-backdrop-com-teclado"
             onClick={(e) => {
               if (e.target === e.currentTarget)
                 definirModalNovaMetaAberta(false)
             }}
           >
-            <div className="sheet-panel w-full max-w-sm bg-white rounded-t-3xl p-5 max-h-[94dvh] overflow-y-auto">
+            <div className="sheet-panel sheet-panel-com-teclado w-full max-w-sm bg-white rounded-t-3xl p-5 max-h-[94dvh] overflow-y-auto">
               <div className="flex items-center justify-between mb-6">
                 <button
                   onClick={() => definirModalNovaMetaAberta(false)}
@@ -2958,12 +2981,12 @@ export default function GestaoLifeApp({
         {/* ══════════════ MODAL NOVA DESPESA ══════════════ */}
         {modalDespesaAberto && (
           <div
-            className="fixed inset-0 bg-black/50 z-20 flex items-end justify-center sheet-backdrop"
+            className="fixed inset-0 bg-black/50 z-20 flex items-end justify-center sheet-backdrop sheet-backdrop-com-teclado"
             onClick={(e) => {
               if (e.target === e.currentTarget) fecharModal()
             }}
           >
-            <div className="sheet-panel w-full max-w-sm bg-white rounded-t-3xl p-5 max-h-[92vh] overflow-y-auto">
+            <div className="sheet-panel sheet-panel-com-teclado w-full max-w-sm bg-white rounded-t-3xl p-5 max-h-[92vh] overflow-y-auto">
               <div className="flex items-center justify-between mb-6">
                 <button
                   onClick={fecharModal}
@@ -3249,8 +3272,8 @@ export default function GestaoLifeApp({
                     <p className="mb-2 px-1 text-[10px] font-semibold uppercase tracking-widest text-gray-600">
                       Resumo do ciclo
                     </p>
-                    <div className="grid grid-cols-3 gap-2">
-                      <div className="rounded-xl bg-white px-2 py-2.5 text-center">
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="min-h-[62px] rounded-xl bg-white px-2 py-2.5 text-center">
                         <p className="text-[9px] leading-tight text-gray-500">
                           Previsão do ciclo
                         </p>
@@ -3260,7 +3283,7 @@ export default function GestaoLifeApp({
                           )}
                         </p>
                       </div>
-                      <div className="rounded-xl bg-white px-2 py-2.5 text-center">
+                      <div className="min-h-[62px] rounded-xl bg-white px-2 py-2.5 text-center">
                         <p className="text-[9px] leading-tight text-gray-500">
                           Ainda previsto
                         </p>
@@ -3270,13 +3293,37 @@ export default function GestaoLifeApp({
                           )}
                         </p>
                       </div>
-                      <div className="rounded-xl bg-white px-2 py-2.5 text-center">
+                      <div className="min-h-[62px] rounded-xl bg-white px-2 py-2.5 text-center">
                         <p className="text-[9px] leading-tight text-gray-500">
                           Já gasto
                         </p>
-                        <p className="mt-1 text-xs font-extrabold text-emerald-600">
+                        <p
+                          className={`mt-1 text-xs font-extrabold ${
+                            resumoDoPadraoSelecionado.gastoNoCiclo <
+                            resumoDoPadraoSelecionado.previsaoDoCiclo
+                              ? "text-emerald-600"
+                              : "text-red-600"
+                          }`}
+                        >
                           {formatarMoeda(
                             resumoDoPadraoSelecionado.gastoNoCiclo,
+                          )}
+                        </p>
+                      </div>
+                      <div className="min-h-[62px] rounded-xl bg-white px-2 py-2.5 text-center">
+                        <p className="text-[9px] leading-tight text-gray-500">
+                          Após esta despesa
+                        </p>
+                        <p
+                          className={`mt-1 text-xs font-extrabold ${
+                            resumoDoPadraoSelecionado.gastoComNovaDespesa <
+                            resumoDoPadraoSelecionado.previsaoDoCiclo
+                              ? "text-emerald-600"
+                              : "text-red-600"
+                          }`}
+                        >
+                          {formatarMoeda(
+                            resumoDoPadraoSelecionado.gastoComNovaDespesa,
                           )}
                         </p>
                       </div>

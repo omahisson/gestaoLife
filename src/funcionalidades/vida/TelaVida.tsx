@@ -76,16 +76,6 @@ export default function TelaVida({
         </div>
         <div className="flex items-center bg-gray-900/8 rounded-2xl p-1">
           <button
-            onClick={() => aoSelecionarSegmento("metas")}
-            className={`flex-1 py-2 rounded-xl text-sm font-semibold transition-all ${
-              segmentoAtual === "metas"
-                ? "bg-[#1A56DB] text-white shadow-sm"
-                : "text-gray-500"
-            }`}
-          >
-            Metas
-          </button>
-          <button
             onClick={() => aoSelecionarSegmento("notas")}
             className={`flex-1 py-2 rounded-xl text-sm font-semibold transition-all ${
               segmentoAtual === "notas"
@@ -94,6 +84,16 @@ export default function TelaVida({
             }`}
           >
             Notas
+          </button>
+          <button
+            onClick={() => aoSelecionarSegmento("metas")}
+            className={`flex-1 py-2 rounded-xl text-sm font-semibold transition-all ${
+              segmentoAtual === "metas"
+                ? "bg-[#1A56DB] text-white shadow-sm"
+                : "text-gray-500"
+            }`}
+          >
+            Metas
           </button>
         </div>
       </div>

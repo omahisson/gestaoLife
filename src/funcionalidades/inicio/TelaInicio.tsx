@@ -237,7 +237,7 @@ export default function TelaInicio({
                   : "text-gray-600"
               }`}
             >
-              Diário
+              Semanal
             </button>
           </div>
 
@@ -259,6 +259,7 @@ export default function TelaInicio({
             <CalendarioSemanal
               dias={diasDaSemana}
               diaSelecionado={diaSelecionado}
+              dataFimDoCiclo={dataFimDoCiclo}
               calcularTotalPorData={calcularTotalPorData}
               contarTarefasPorData={contarTarefasPorData}
               aoSelecionarDia={aoSelecionarDiaSemanal}
@@ -436,12 +437,14 @@ function CalendarioMensal({
 function CalendarioSemanal({
   dias,
   diaSelecionado,
+  dataFimDoCiclo,
   calcularTotalPorData,
   contarTarefasPorData,
   aoSelecionarDia,
 }: {
   dias: Date[]
   diaSelecionado: Date
+  dataFimDoCiclo: string
   calcularTotalPorData: (data: string) => number
   contarTarefasPorData: (data: string) => number
   aoSelecionarDia: (dia: Date) => void
@@ -451,6 +454,7 @@ function CalendarioSemanal({
       {dias.map((dia, indice) => {
         const data = formatarDataIso(dia)
         const ehHoje = data === formatarDataIso(HOJE)
+        const ehFimDoCiclo = data === dataFimDoCiclo
         const estaSelecionado = data === formatarDataIso(diaSelecionado)
         const total = calcularTotalPorData(data)
         const quantidadeTarefas = contarTarefasPorData(data)
@@ -466,8 +470,10 @@ function CalendarioSemanal({
             </span>
             <span
               className={`w-9 h-9 flex items-center justify-center rounded-full text-sm font-semibold transition-all ${
-                estaSelecionado
-                  ? "bg-[#1A56DB] text-white"
+                ehFimDoCiclo
+                  ? "bg-[#DBEAFE] text-[#1A56DB] font-bold ring-1 ring-[#1A56DB]/30"
+                  : estaSelecionado
+                    ? "bg-[#1A56DB] text-white"
                   : ehHoje
                     ? "text-[#1A56DB] font-bold"
                     : "text-gray-700"
