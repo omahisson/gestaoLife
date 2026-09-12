@@ -3285,7 +3285,7 @@ export default function GestaoLifeApp({
                         <>
                           Todas as ocorrências de gasto previstas para este
                           ciclo já foram registradas. Esta despesa será
-                          registrada como avulsa extra.
+                          registrada como extra.
                         </>
                       ) : (
                         <>
