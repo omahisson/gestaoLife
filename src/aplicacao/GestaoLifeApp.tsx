@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState, type RefObject } from "react"
 
 import useAtualizacaoPeriodica from "../compartilhado/ganchos/useAtualizacaoPeriodica"
 import useDadosDoUsuario from "../compartilhado/ganchos/useDadosDoUsuario"
@@ -84,6 +84,34 @@ function despesaPertenceAoPadrao(
   )
 }
 
+function useCampoVisivelAoAbrir(
+  aberto: boolean,
+  campoRef: RefObject<HTMLInputElement | null>,
+) {
+  useEffect(() => {
+    const campo = aberto ? campoRef.current : null
+    if (!campo) return
+
+    const manterVisivel = () => {
+      requestAnimationFrame(() => {
+        campo.focus({ preventScroll: true })
+        campo.scrollIntoView({ block: "center", behavior: "auto" })
+      })
+    }
+    const temporizadores = [
+      window.setTimeout(manterVisivel, 0),
+      window.setTimeout(manterVisivel, 360),
+      window.setTimeout(manterVisivel, 720),
+    ]
+    window.visualViewport?.addEventListener("resize", manterVisivel)
+
+    return () => {
+      temporizadores.forEach(window.clearTimeout)
+      window.visualViewport?.removeEventListener("resize", manterVisivel)
+    }
+  }, [aberto, campoRef])
+}
+
 function obterTotalPrevistoNoCiclo(
   padrao: DespesaPrevista,
   quantidadeDiasDoCiclo: number,
@@ -142,7 +170,9 @@ export default function GestaoLifeApp({
   const [valorEdicaoDespesa, definirValorEdicaoDespesa] = useState("")
   const [pagamentoEdicaoDespesa, definirPagamentoEdicaoDespesa] =
     useState<TipoPagamento>("pix")
-  const [cartaoEdicaoDespesa, definirCartaoEdicaoDespesa] = useState("")
+  const [cartaoEdicaoDespesa, definirCartaoEdicaoDespesa] = useState<
+    number | null
+  >(null)
   const [recorrenciaEdicaoDespesa, definirRecorrenciaEdicaoDespesa] =
     useState<TipoRecorrencia>("avulsa")
 
@@ -153,7 +183,9 @@ export default function GestaoLifeApp({
   const [nomePrevisaoEmEdicao, definirNomePrevisaoEmEdicao] = useState("")
   const [pagamentoPrevisaoEmEdicao, definirPagamentoPrevisaoEmEdicao] =
     useState<TipoPagamento>("pix")
-  const [cartaoPrevisaoEmEdicao, definirCartaoPrevisaoEmEdicao] = useState("")
+  const [cartaoPrevisaoEmEdicao, definirCartaoPrevisaoEmEdicao] = useState<
+    number | null
+  >(null)
   const [recorrenciaPrevisaoEmEdicao, definirRecorrenciaPrevisaoEmEdicao] =
     useState<TipoRecorrencia>("mensal")
   const [
@@ -176,7 +208,9 @@ export default function GestaoLifeApp({
   const [valorDespesa, definirValorDespesa] = useState("")
   const [dataDespesa, definirDataDespesa] = useState(formatarDataIso(HOJE))
   const [pagamento, definirPagamento] = useState<TipoPagamento>("pix")
-  const [cartaoSelecionado, definirCartaoSelecionado] = useState("")
+  const [cartaoSelecionado, definirCartaoSelecionado] = useState<number | null>(
+    null,
+  )
   const [recorrencia, definirRecorrencia] = useState<TipoRecorrencia>("avulsa")
   const [ocorrenciasPersonalizadas, definirOcorrenciasPersonalizadas] =
     useState("1")
@@ -184,6 +218,7 @@ export default function GestaoLifeApp({
   const [padraoSelecionadoId, definirPadraoSelecionadoId] =
     useState<number | null>(null)
   const [erroNovaDespesa, definirErroNovaDespesa] = useState("")
+  const campoNomeNovaDespesaRef = useRef<HTMLInputElement>(null)
 
   // Pizza toggle
   const [pizzaPorPagamento, definirPizzaPorPagamento] = useState(false)
@@ -243,25 +278,9 @@ export default function GestaoLifeApp({
     meta: Meta
   } | null>(null)
 
-  useEffect(() => {
-    const campo = modalNovaMetaAberta ? campoNomeNovaMetaRef.current : null
-    if (!campo) return
-    const quadro = requestAnimationFrame(() => {
-      campo.focus({ preventScroll: true })
-      campo.scrollIntoView({ block: "center", behavior: "smooth" })
-    })
-    return () => cancelAnimationFrame(quadro)
-  }, [modalNovaMetaAberta])
-
-  useEffect(() => {
-    const campo = modalNovaNotaAberta ? campoTituloNovaNotaRef.current : null
-    if (!campo) return
-    const quadro = requestAnimationFrame(() => {
-      campo.focus({ preventScroll: true })
-      campo.scrollIntoView({ block: "center", behavior: "smooth" })
-    })
-    return () => cancelAnimationFrame(quadro)
-  }, [modalNovaNotaAberta])
+  useCampoVisivelAoAbrir(modalNovaMetaAberta, campoNomeNovaMetaRef)
+  useCampoVisivelAoAbrir(modalNovaNotaAberta, campoTituloNovaNotaRef)
+  useCampoVisivelAoAbrir(modalDespesaAberto, campoNomeNovaDespesaRef)
 
   // ── Dados derivados ────────────────────────────────────────────────────
   const periodoFinanceiroAtual = obterPeriodoDoCicloFinanceiro(
@@ -323,15 +342,20 @@ export default function GestaoLifeApp({
         .reduce((a, d) => a + d.valor, 0),
     [despesas, mesInsightsIso],
   )
+  const despesasDoCicloAtual = useMemo(
+    () =>
+      despesas.filter(
+        (despesa) =>
+          despesa.data >= inicioCicloIso && despesa.data <= fimCicloIso,
+      ),
+    [despesas, fimCicloIso, inicioCicloIso],
+  )
   const despesasDoPeriodoInsights = useMemo(
     () =>
       statusPeriodo === "atual"
-        ? despesas.filter(
-            (despesa) =>
-              despesa.data >= inicioCicloIso && despesa.data <= fimCicloIso,
-          )
+        ? despesasDoCicloAtual
         : despesas.filter((despesa) => despesa.data.startsWith(mesInsightsIso)),
-    [despesas, fimCicloIso, inicioCicloIso, mesInsightsIso, statusPeriodo],
+    [despesas, despesasDoCicloAtual, mesInsightsIso, statusPeriodo],
   )
   const gastosDoPeriodoInsights = useMemo(
     () =>
@@ -363,6 +387,7 @@ export default function GestaoLifeApp({
           nome: padrao.nome,
           valor: padrao.valor,
           pagamento: padrao.pagamento ?? ultimaDespesa?.pagamento ?? "pix",
+          cartaoId: padrao.cartaoId ?? ultimaDespesa?.cartaoId,
           cartaoNome: padrao.cartaoNome ?? ultimaDespesa?.cartaoNome,
           recorrencia: padrao.recorrencia,
           totalPrevisto,
@@ -630,7 +655,7 @@ export default function GestaoLifeApp({
     if (!despesaAberta) return
     definirValorEdicaoDespesa(String(despesaAberta.valor))
     definirPagamentoEdicaoDespesa(despesaAberta.pagamento)
-    definirCartaoEdicaoDespesa(despesaAberta.cartaoNome ?? "")
+    definirCartaoEdicaoDespesa(despesaAberta.cartaoId ?? null)
     definirRecorrenciaEdicaoDespesa(despesaAberta.recorrencia)
     definirModoDetalhe("editar")
   }
@@ -638,6 +663,10 @@ export default function GestaoLifeApp({
     if (!despesaAberta) return
     const v = parseFloat(valorEdicaoDespesa.replace(",", "."))
     if (isNaN(v) || v <= 0) return
+    const cartaoDaEdicao = cartoes.find(
+      (cartao) => cartao.id === cartaoEdicaoDespesa,
+    )
+    if (pagamentoEdicaoDespesa === "cartao" && !cartaoDaEdicao) return
     // Nome intocável; não altera template
     definirDespesas((prev) =>
       prev.map((d) =>
@@ -646,9 +675,13 @@ export default function GestaoLifeApp({
               ...d,
               valor: v,
               pagamento: pagamentoEdicaoDespesa,
+              cartaoId:
+                pagamentoEdicaoDespesa === "cartao"
+                  ? cartaoDaEdicao?.id
+                  : undefined,
               cartaoNome:
                 pagamentoEdicaoDespesa === "cartao"
-                  ? cartaoEdicaoDespesa || undefined
+                  ? cartaoDaEdicao?.nome
                   : undefined,
               recorrencia: recorrenciaEdicaoDespesa,
             }
@@ -675,6 +708,7 @@ export default function GestaoLifeApp({
     nome: string
     valor: number
     pagamento: TipoPagamento
+    cartaoId?: number
     cartaoNome?: string
     totalPrevisto: number
     recorrencia: TipoRecorrencia
@@ -683,7 +717,7 @@ export default function GestaoLifeApp({
     definirNomePrevisaoEmEdicao(g.nome)
     definirValorPrevisaoEmEdicao(String(g.valor))
     definirPagamentoPrevisaoEmEdicao(g.pagamento)
-    definirCartaoPrevisaoEmEdicao(g.cartaoNome ?? "")
+    definirCartaoPrevisaoEmEdicao(g.cartaoId ?? null)
     definirRecorrenciaPrevisaoEmEdicao(g.recorrencia)
     definirOcorrenciasPersonalizadasPrevisao(
       g.recorrencia === "personalizada" ? String(g.totalPrevisto || 1) : "1",
@@ -697,13 +731,15 @@ export default function GestaoLifeApp({
     if (!padraoAnterior) return
     const nome = nomePrevisaoEmEdicao.trim()
     const v = parseFloat(valorPrevisaoEmEdicao.replace(",", "."))
+    const cartaoDoPadrao = cartoes.find(
+      (cartao) => cartao.id === cartaoPrevisaoEmEdicao,
+    )
     if (
       !nome ||
       isNaN(v) ||
       v <= 0 ||
       (pagamentoPrevisaoEmEdicao === "cartao" &&
-        (!cartaoPrevisaoEmEdicao ||
-          !cartoes.includes(cartaoPrevisaoEmEdicao)))
+        !cartaoDoPadrao)
     )
       return
     const nomeJaUsado = despesasPrevistas.some(
@@ -718,9 +754,13 @@ export default function GestaoLifeApp({
         nome,
         valor: v,
         pagamento: pagamentoPrevisaoEmEdicao,
+        cartaoId:
+          pagamentoPrevisaoEmEdicao === "cartao"
+            ? cartaoDoPadrao?.id
+            : undefined,
         cartaoNome:
           pagamentoPrevisaoEmEdicao === "cartao"
-            ? cartaoPrevisaoEmEdicao
+            ? cartaoDoPadrao?.nome
             : undefined,
         recorrencia: recorrenciaPrevisaoEmEdicao,
         ocorrenciasPorCiclo:
@@ -739,9 +779,13 @@ export default function GestaoLifeApp({
               nome,
               valor: v,
               pagamento: pagamentoPrevisaoEmEdicao,
+              cartaoId:
+                pagamentoPrevisaoEmEdicao === "cartao"
+                  ? cartaoDoPadrao?.id
+                  : undefined,
               cartaoNome:
                 pagamentoPrevisaoEmEdicao === "cartao"
-                  ? cartaoPrevisaoEmEdicao
+                  ? cartaoDoPadrao?.nome
                   : undefined,
               recorrencia: recorrenciaPrevisaoEmEdicao,
               ocorrenciasPorCiclo:
@@ -1091,13 +1135,14 @@ export default function GestaoLifeApp({
     const valorRef = prev?.valor ?? ref?.valor
     if (valorRef != null) definirValorDespesa(String(valorRef))
     const pagamentoRef = prev?.pagamento ?? ref?.pagamento
-    const cartaoRef = prev?.cartaoNome ?? ref?.cartaoNome
+    const cartaoRefId = prev?.cartaoId ?? ref?.cartaoId
     if (pagamentoRef) {
       definirPagamento(pagamentoRef)
+      const cartaoAtivo = cartoes.find(
+        (cartao) => cartao.id === cartaoRefId,
+      )
       definirCartaoSelecionado(
-        pagamentoRef === "cartao" && cartaoRef && cartoes.includes(cartaoRef)
-          ? cartaoRef
-          : "",
+        pagamentoRef === "cartao" ? (cartaoAtivo?.id ?? null) : null,
       )
     }
     if (prev) {
@@ -1117,8 +1162,8 @@ export default function GestaoLifeApp({
   function aoSelecionarPagamento(p: TipoPagamento) {
     definirPagamento(p)
     definirErroNovaDespesa("")
-    if (p === "cartao" && cartoes.length > 0 && !cartaoSelecionado)
-      definirCartaoSelecionado(cartoes[0])
+    if (p === "cartao" && cartoes.length > 0 && cartaoSelecionado == null)
+      definirCartaoSelecionado(cartoes[0].id)
   }
   function salvarDespesa() {
     const v = parseFloat(valorDespesa.replace(",", "."))
@@ -1126,10 +1171,10 @@ export default function GestaoLifeApp({
     if (!nomeDespesa.trim()) camposFaltando.push("nome da despesa")
     if (isNaN(v) || v <= 0) camposFaltando.push("valor maior que zero")
     if (!dataDespesa) camposFaltando.push("data")
-    if (
-      pagamento === "cartao" &&
-      (!cartaoSelecionado || !cartoes.includes(cartaoSelecionado))
+    const cartaoDaDespesa = cartoes.find(
+      (cartao) => cartao.id === cartaoSelecionado,
     )
+    if (pagamento === "cartao" && !cartaoDaDespesa)
       camposFaltando.push("cartão disponível")
     if (
       recorrencia === "personalizada" &&
@@ -1161,7 +1206,9 @@ export default function GestaoLifeApp({
           nome: nomeFinal,
           valor: v,
           pagamento,
-          cartaoNome: pagamento === "cartao" ? cartaoSelecionado : undefined,
+          cartaoId: pagamento === "cartao" ? cartaoDaDespesa?.id : undefined,
+          cartaoNome:
+            pagamento === "cartao" ? cartaoDaDespesa?.nome : undefined,
           recorrencia,
           ocorrenciasPorCiclo: occ,
           restantes: occ ?? 1,
@@ -1175,7 +1222,9 @@ export default function GestaoLifeApp({
           nome: nomeFinal,
           valor: v,
           pagamento,
-          cartaoNome: pagamento === "cartao" ? cartaoSelecionado : undefined,
+          cartaoId: pagamento === "cartao" ? cartaoDaDespesa?.id : undefined,
+          cartaoNome:
+            pagamento === "cartao" ? cartaoDaDespesa?.nome : undefined,
           recorrencia,
           ocorrenciasPorCiclo: occ,
           restantes: totalPrevisto,
@@ -1200,7 +1249,9 @@ export default function GestaoLifeApp({
           valor: v,
           data: dataDespesa,
           pagamento,
-          cartaoNome: pagamento === "cartao" ? cartaoSelecionado : undefined,
+          cartaoId: pagamento === "cartao" ? cartaoDaDespesa?.id : undefined,
+          cartaoNome:
+            pagamento === "cartao" ? cartaoDaDespesa?.nome : undefined,
           recorrencia,
           ocorrenciasRestantes: occ,
         },
@@ -1221,7 +1272,7 @@ export default function GestaoLifeApp({
     definirNomeDespesa("")
     definirValorDespesa("")
     definirPagamento("pix")
-    definirCartaoSelecionado("")
+    definirCartaoSelecionado(null)
     definirRecorrencia("avulsa")
     definirOcorrenciasPersonalizadas("1")
     definirSugestoes([])
@@ -1237,51 +1288,57 @@ export default function GestaoLifeApp({
   // ── Cartões ────────────────────────────────────────────────────────────
   function adicionarCartao(nome: string) {
     if (!nome) return
+    const identificador = gerarProximoIdentificador()
     definirCartoes((cartoesAtuais) =>
-      cartoesAtuais.includes(nome) ? cartoesAtuais : [...cartoesAtuais, nome],
+      cartoesAtuais.some(
+        (cartao) => normalizarNome(cartao.nome) === normalizarNome(nome),
+      )
+        ? cartoesAtuais
+        : [...cartoesAtuais, { id: identificador, nome }],
     )
   }
-  function removerCartao(nome: string) {
-    definirCartoes((prev) => prev.filter((c) => c !== nome))
-    definirCartaoSelecionado((atual) => (atual === nome ? "" : atual))
-    definirCartaoEdicaoDespesa((atual) => (atual === nome ? "" : atual))
-    definirCartaoPrevisaoEmEdicao((atual) => (atual === nome ? "" : atual))
+  function removerCartao(cartaoId: number) {
+    definirCartoes((prev) => prev.filter((cartao) => cartao.id !== cartaoId))
+    definirCartaoSelecionado((atual) =>
+      atual === cartaoId ? null : atual,
+    )
+    definirCartaoEdicaoDespesa((atual) =>
+      atual === cartaoId ? null : atual,
+    )
+    definirCartaoPrevisaoEmEdicao((atual) =>
+      atual === cartaoId ? null : atual,
+    )
   }
-  function renomearCartao(nomeAtual: string, novoNomeInformado: string) {
+  function renomearCartao(cartaoId: number, novoNomeInformado: string) {
     const novoNome = novoNomeInformado.trim()
+    const cartaoAtual = cartoes.find((cartao) => cartao.id === cartaoId)
+    if (!cartaoAtual) return
     if (
       !novoNome ||
-      (normalizarNome(nomeAtual) !== normalizarNome(novoNome) &&
+      (normalizarNome(cartaoAtual.nome) !== normalizarNome(novoNome) &&
         cartoes.some(
-          (cartao) => normalizarNome(cartao) === normalizarNome(novoNome),
+          (cartao) => normalizarNome(cartao.nome) === normalizarNome(novoNome),
         ))
     )
       return
     definirCartoes((prev) =>
-      prev.map((cartao) => (cartao === nomeAtual ? novoNome : cartao)),
+      prev.map((cartao) =>
+        cartao.id === cartaoId ? { ...cartao, nome: novoNome } : cartao,
+      ),
     )
     definirDespesas((prev) =>
       prev.map((despesa) =>
-        despesa.cartaoNome === nomeAtual
+        despesa.cartaoId === cartaoId
           ? { ...despesa, cartaoNome: novoNome }
           : despesa,
       ),
     )
     definirDespesasPrevistas((prev) =>
       prev.map((padrao) =>
-        padrao.cartaoNome === nomeAtual
+        padrao.cartaoId === cartaoId
           ? { ...padrao, cartaoNome: novoNome }
           : padrao,
       ),
-    )
-    definirCartaoSelecionado((atual) =>
-      atual === nomeAtual ? novoNome : atual,
-    )
-    definirCartaoEdicaoDespesa((atual) =>
-      atual === nomeAtual ? novoNome : atual,
-    )
-    definirCartaoPrevisaoEmEdicao((atual) =>
-      atual === nomeAtual ? novoNome : atual,
     )
   }
 
@@ -1313,6 +1370,27 @@ export default function GestaoLifeApp({
   const padraoSelecionado = despesasPrevistas.find(
     (padrao) => padrao.id === padraoSelecionadoId,
   )
+  const resumoDoPadraoSelecionado = padraoSelecionado
+    ? (() => {
+        const despesasRegistradas = despesasDoCicloAtual.filter((despesa) =>
+          despesaPertenceAoPadrao(despesa, padraoSelecionado),
+        )
+        const totalPrevisto = obterTotalPrevistoNoCiclo(
+          padraoSelecionado,
+          quantidadeDiasDoCiclo,
+        )
+        return {
+          previsaoDoCiclo: padraoSelecionado.valor * totalPrevisto,
+          aindaPrevisto:
+            padraoSelecionado.valor *
+            Math.max(totalPrevisto - despesasRegistradas.length, 0),
+          gastoNoCiclo: despesasRegistradas.reduce(
+            (total, despesa) => total + despesa.valor,
+            0,
+          ),
+        }
+      })()
+    : null
 
   // ── Render ─────────────────────────────────────────────────────────────
   if (!dadosCarregados) {
@@ -2929,6 +3007,7 @@ export default function GestaoLifeApp({
               <div className="space-y-4">
                 <div className="relative">
                   <input
+                    ref={campoNomeNovaDespesaRef}
                     type="text"
                     placeholder="Nome da despesa"
                     value={nomeDespesa}
@@ -3036,22 +3115,22 @@ export default function GestaoLifeApp({
                     <div className="mt-2 flex flex-col gap-1.5">
                       {cartoes.map((c) => (
                         <button
-                          key={c}
+                          key={c.id}
                           onClick={() => {
-                            definirCartaoSelecionado(c)
+                            definirCartaoSelecionado(c.id)
                             definirErroNovaDespesa("")
                           }}
                           className={`flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl text-left transition-all ${
-                            cartaoSelecionado === c
+                            cartaoSelecionado === c.id
                               ? "bg-[#1A56DB] text-white"
                               : "bg-gray-100 text-gray-600 hover:bg-gray-200"
                           }`}
                         >
                           <span className="text-base">💳</span>
                           <span className="text-sm font-medium truncate flex-1">
-                            {c}
+                            {c.nome}
                           </span>
-                          {cartaoSelecionado === c && (
+                          {cartaoSelecionado === c.id && (
                             <span className="ml-auto shrink-0">
                               <IconeConfirmar />
                             </span>
@@ -3165,25 +3244,66 @@ export default function GestaoLifeApp({
                     />
                   </div>
                 )}
-                {recorrencia !== "avulsa" && valorProjecaoDaDespesa > 0 && (
-                  <div className="bg-gray-50 border border-gray-100 rounded-2xl p-4">
-                    <p className="text-[11px] text-gray-600 font-semibold uppercase tracking-widest mb-1">
-                      Projeção até dia {diaFechamento}
+                {resumoDoPadraoSelecionado && (
+                  <div className="rounded-2xl border border-gray-100 bg-gray-50 p-3">
+                    <p className="mb-2 px-1 text-[10px] font-semibold uppercase tracking-widest text-gray-600">
+                      Resumo do ciclo
                     </p>
-                    <p className="text-2xl font-bold text-gray-900">
-                      {formatarMoeda(valorProjecaoDaDespesa)}
-                    </p>
-                    <p className="text-xs text-gray-600 mt-1">
-                      {recorrencia === "diaria" &&
-                        `${periodoFinanceiroAtual.diasRestantes} ocorrências previstas`}
-                      {recorrencia === "semanal" &&
-                        `${Math.ceil(periodoFinanceiroAtual.diasRestantes / 7)} ocorrências previstas`}
-                      {recorrencia === "mensal" && "1 ocorrência prevista"}
-                      {recorrencia === "personalizada" &&
-                        `${ocorrenciasPersonalizadas} ocorrência(s) prevista(s)`}
-                    </p>
+                    <div className="grid grid-cols-3 gap-2">
+                      <div className="rounded-xl bg-white px-2 py-2.5 text-center">
+                        <p className="text-[9px] leading-tight text-gray-500">
+                          Previsão do ciclo
+                        </p>
+                        <p className="mt-1 text-xs font-extrabold text-[#1A56DB]">
+                          {formatarMoeda(
+                            resumoDoPadraoSelecionado.previsaoDoCiclo,
+                          )}
+                        </p>
+                      </div>
+                      <div className="rounded-xl bg-white px-2 py-2.5 text-center">
+                        <p className="text-[9px] leading-tight text-gray-500">
+                          Ainda previsto
+                        </p>
+                        <p className="mt-1 text-xs font-extrabold text-orange-600">
+                          {formatarMoeda(
+                            resumoDoPadraoSelecionado.aindaPrevisto,
+                          )}
+                        </p>
+                      </div>
+                      <div className="rounded-xl bg-white px-2 py-2.5 text-center">
+                        <p className="text-[9px] leading-tight text-gray-500">
+                          Já gasto
+                        </p>
+                        <p className="mt-1 text-xs font-extrabold text-emerald-600">
+                          {formatarMoeda(
+                            resumoDoPadraoSelecionado.gastoNoCiclo,
+                          )}
+                        </p>
+                      </div>
+                    </div>
                   </div>
                 )}
+                {!padraoSelecionado &&
+                  recorrencia !== "avulsa" &&
+                  valorProjecaoDaDespesa > 0 && (
+                    <div className="bg-gray-50 border border-gray-100 rounded-2xl p-4">
+                      <p className="text-[11px] text-gray-600 font-semibold uppercase tracking-widest mb-1">
+                        Projeção até dia {diaFechamento}
+                      </p>
+                      <p className="text-2xl font-bold text-gray-900">
+                        {formatarMoeda(valorProjecaoDaDespesa)}
+                      </p>
+                      <p className="text-xs text-gray-600 mt-1">
+                        {recorrencia === "diaria" &&
+                          `${periodoFinanceiroAtual.diasRestantes} ocorrências previstas`}
+                        {recorrencia === "semanal" &&
+                          `${Math.ceil(periodoFinanceiroAtual.diasRestantes / 7)} ocorrências previstas`}
+                        {recorrencia === "mensal" && "1 ocorrência prevista"}
+                        {recorrencia === "personalizada" &&
+                          `${ocorrenciasPersonalizadas} ocorrência(s) prevista(s)`}
+                      </p>
+                    </div>
+                  )}
                 {erroNovaDespesa && (
                   <p
                     id="erro-nova-despesa"
@@ -3355,9 +3475,9 @@ export default function GestaoLifeApp({
                               if (
                                 p === "cartao" &&
                                 cartoes.length > 0 &&
-                                !cartaoEdicaoDespesa
+                                cartaoEdicaoDespesa == null
                               )
-                                definirCartaoEdicaoDespesa(cartoes[0])
+                                definirCartaoEdicaoDespesa(cartoes[0].id)
                             }}
                             className={`flex-1 py-2.5 text-sm font-semibold rounded-xl transition-all ${
                               pagamentoEdicaoDespesa === p
@@ -3374,19 +3494,21 @@ export default function GestaoLifeApp({
                           <div className="mt-2 flex flex-col gap-1.5">
                             {cartoes.map((c) => (
                               <button
-                                key={c}
-                                onClick={() => definirCartaoEdicaoDespesa(c)}
+                                key={c.id}
+                                onClick={() =>
+                                  definirCartaoEdicaoDespesa(c.id)
+                                }
                                 className={`flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl text-left transition-all ${
-                                  cartaoEdicaoDespesa === c
+                                  cartaoEdicaoDespesa === c.id
                                     ? "bg-[#1A56DB] text-white"
                                     : "bg-gray-100 text-gray-600 hover:bg-gray-200"
                                 }`}
                               >
                                 <span className="text-base">💳</span>
                                 <span className="text-sm font-medium truncate flex-1">
-                                  {c}
+                                  {c.nome}
                                 </span>
-                                {cartaoEdicaoDespesa === c && (
+                                {cartaoEdicaoDespesa === c.id && (
                                   <span className="ml-auto shrink-0">
                                     <IconeConfirmar />
                                   </span>
@@ -3837,10 +3959,10 @@ export default function GestaoLifeApp({
                                           if (
                                             tipo === "cartao" &&
                                             cartoes.length > 0 &&
-                                            !cartaoPrevisaoEmEdicao
+                                            cartaoPrevisaoEmEdicao == null
                                           )
                                             definirCartaoPrevisaoEmEdicao(
-                                              cartoes[0],
+                                              cartoes[0].id,
                                             )
                                         }}
                                         className={`flex-1 py-2.5 text-sm font-semibold rounded-xl transition-all ${
@@ -3859,19 +3981,20 @@ export default function GestaoLifeApp({
                                         {cartoes.map((cartao) => (
                                           <button
                                             type="button"
-                                            key={cartao}
+                                            key={cartao.id}
                                             onClick={() =>
                                               definirCartaoPrevisaoEmEdicao(
-                                                cartao,
+                                                cartao.id,
                                               )
                                             }
                                             className={`rounded-xl px-3.5 py-2.5 text-left text-sm font-medium transition-colors ${
-                                              cartaoPrevisaoEmEdicao === cartao
+                                              cartaoPrevisaoEmEdicao ===
+                                              cartao.id
                                                 ? "bg-[#1A56DB] text-white"
                                                 : "bg-gray-100 text-gray-600"
                                             }`}
                                           >
-                                            {cartao}
+                                            {cartao.nome}
                                           </button>
                                         ))}
                                       </div>

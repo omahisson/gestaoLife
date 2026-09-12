@@ -7,6 +7,7 @@ import {
   IconeMais,
 } from "../../componentes/icones/Icones"
 import { MESES_ABREVIADOS } from "../../dominio/constantes"
+import type { Cartao } from "../../dominio/modelos"
 import { obterPeriodoDoCicloFinanceiro } from "../../dominio/regras-temporais"
 
 interface PropriedadesTelaPerfil {
@@ -16,12 +17,12 @@ interface PropriedadesTelaPerfil {
   quantidadeMetas: number
   quantidadeNotas: number
   diaFechamento: number
-  cartoes: string[]
+  cartoes: Cartao[]
   aoAlterarNome: (nome: string) => void
   aoAlterarDiaFechamento: (dia: number) => void
   aoAdicionarCartao: (nome: string) => void
-  aoRenomearCartao: (nomeAtual: string, novoNome: string) => void
-  aoRemoverCartao: (nome: string) => void
+  aoRenomearCartao: (cartaoId: number, novoNome: string) => void
+  aoRemoverCartao: (cartaoId: number) => void
   aoSair: () => void
 }
 
@@ -46,7 +47,7 @@ export default function TelaPerfil({
   const [diaTemporario, definirDiaTemporario] = useState(diaFechamento)
   const [adicionandoCartao, definirAdicionandoCartao] = useState(false)
   const [novoCartao, definirNovoCartao] = useState("")
-  const [cartaoEmEdicao, definirCartaoEmEdicao] = useState<string | null>(null)
+  const [cartaoEmEdicao, definirCartaoEmEdicao] = useState<number | null>(null)
   const [nomeCartaoTemporario, definirNomeCartaoTemporario] = useState("")
   const periodoDoCiclo = obterPeriodoDoCicloFinanceiro(diaFechamento)
 
@@ -82,7 +83,7 @@ export default function TelaPerfil({
   }
 
   function salvarNomeDoCartao() {
-    if (!cartaoEmEdicao) return
+    if (cartaoEmEdicao == null) return
     const novoNome = nomeCartaoTemporario.trim()
     if (novoNome) aoRenomearCartao(cartaoEmEdicao, novoNome)
     definirCartaoEmEdicao(null)
@@ -314,11 +315,11 @@ export default function TelaPerfil({
             <div className="border-t border-gray-100">
               {cartoes.map((cartao) => (
                 <div
-                  key={cartao}
+                  key={cartao.id}
                   className="flex items-center gap-3 px-4 py-3.5 border-b border-gray-50 last:border-0"
                 >
                   <span className="text-lg">💳</span>
-                  {cartaoEmEdicao === cartao ? (
+                  {cartaoEmEdicao === cartao.id ? (
                     <div
                       className="flex flex-1 items-center gap-2 min-w-0"
                       onBlur={(evento) => {
@@ -343,7 +344,7 @@ export default function TelaPerfil({
                         }}
                         autoFocus
                         className="min-w-0 flex-1 rounded-xl bg-gray-100 px-3 py-2 text-sm font-medium text-gray-900 outline-none ring-[#1A56DB]/30 focus:ring-2"
-                        aria-label={`Novo nome de ${cartao}`}
+                        aria-label={`Novo nome de ${cartao.nome}`}
                       />
                       <button
                         type="button"
@@ -356,17 +357,17 @@ export default function TelaPerfil({
                     </div>
                   ) : (
                     <span className="flex-1 text-sm font-medium text-gray-900 truncate">
-                      {cartao}
+                      {cartao.nome}
                     </span>
                   )}
-                  {cartaoEmEdicao !== cartao && (
+                  {cartaoEmEdicao !== cartao.id && (
                     <button
                       type="button"
                       onClick={() => {
-                        definirCartaoEmEdicao(cartao)
-                        definirNomeCartaoTemporario(cartao)
+                        definirCartaoEmEdicao(cartao.id)
+                        definirNomeCartaoTemporario(cartao.nome)
                       }}
-                      aria-label={`Editar nome do cartão ${cartao}`}
+                      aria-label={`Editar nome do cartão ${cartao.nome}`}
                       className="text-gray-500 hover:text-[#1A56DB] transition-colors p-2.5 rounded-xl hover:bg-blue-50"
                     >
                       <IconeEditar />
@@ -376,12 +377,12 @@ export default function TelaPerfil({
                     onClick={() => {
                       if (
                         window.confirm(
-                          `Excluir o cartão "${cartao}"? As despesas históricas serão mantidas, mas ele deixará de estar disponível em novos lançamentos.`,
+                          `Excluir o cartão "${cartao.nome}"? As despesas históricas serão mantidas, mas ele deixará de estar disponível em novos lançamentos.`,
                         )
                       )
-                        aoRemoverCartao(cartao)
+                        aoRemoverCartao(cartao.id)
                     }}
-                    aria-label={`Remover cartão ${cartao}`}
+                    aria-label={`Remover cartão ${cartao.nome}`}
                     className="text-gray-500 hover:text-red-500 transition-colors p-2.5 rounded-xl hover:bg-red-50"
                   >
                     <IconeLixeira />

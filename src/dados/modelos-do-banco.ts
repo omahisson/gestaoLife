@@ -1,4 +1,5 @@
 import type {
+  Cartao,
   Despesa,
   DespesaPrevista,
   Meta,
@@ -20,7 +21,7 @@ export interface DadosDoUsuarioNoBanco {
   id: string
   usuarioId: string
   diaFechamento: number
-  cartoes: string[]
+  cartoes: Array<Cartao | string>
   despesas: Despesa[]
   despesasPrevistas: DespesaPrevista[]
   notas: Nota[]

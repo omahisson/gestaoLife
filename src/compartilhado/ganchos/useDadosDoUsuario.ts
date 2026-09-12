@@ -3,12 +3,18 @@ import {
   carregarDadosDoUsuario,
   salvarDadosDoUsuario,
 } from "../../dados/repositorio-remoto"
-import type { Despesa, DespesaPrevista, Meta, Nota } from "../../dominio/modelos"
+import type {
+  Cartao,
+  Despesa,
+  DespesaPrevista,
+  Meta,
+  Nota,
+} from "../../dominio/modelos"
 
 export default function useDadosDoUsuario(usuarioId: string) {
   const [nomeUsuario, definirNomeUsuario] = useState("")
   const [diaFechamento, definirDiaFechamento] = useState(30)
-  const [cartoes, definirCartoes] = useState<string[]>([])
+  const [cartoes, definirCartoes] = useState<Cartao[]>([])
   const [despesas, definirDespesas] = useState<Despesa[]>([])
   const [despesasPrevistas, definirDespesasPrevistas] = useState<
     DespesaPrevista[]

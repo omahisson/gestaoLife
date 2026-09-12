@@ -19,6 +19,11 @@ export interface UsuarioAutenticado {
   perfilAcesso: PerfilAcesso
 }
 
+export interface Cartao {
+  id: number
+  nome: string
+}
+
 export interface BlocoNota {
   id: number
   tipo: "texto" | "checkbox"
@@ -54,6 +59,7 @@ export interface Despesa {
   valor: number
   data: string
   pagamento: TipoPagamento
+  cartaoId?: number
   cartaoNome?: string
   recorrencia: TipoRecorrencia
   ocorrenciasRestantes?: number
@@ -65,6 +71,7 @@ export interface DespesaPrevista {
   nome: string
   valor: number
   pagamento?: TipoPagamento
+  cartaoId?: number
   cartaoNome?: string
   recorrencia: TipoRecorrencia
   ocorrenciasPorCiclo?: number

@@ -1,4 +1,10 @@
-import type { Despesa, DespesaPrevista, Meta, Nota } from "../dominio/modelos"
+import type {
+  Cartao,
+  Despesa,
+  DespesaPrevista,
+  Meta,
+  Nota,
+} from "../dominio/modelos"
 import type {
   DadosDoUsuarioNoBanco,
   UsuarioDoBanco,
@@ -7,7 +13,7 @@ import type {
 export interface DadosDoUsuario {
   nomeUsuario: string
   diaFechamento: number
-  cartoes: string[]
+  cartoes: Cartao[]
   despesas: Despesa[]
   despesasPrevistas: DespesaPrevista[]
   notas: Nota[]
@@ -46,10 +52,13 @@ export async function carregarDadosDoUsuario(
   if (!usuario.ativo || dados.usuarioId !== usuarioId) {
     throw new Error("Usuário inativo ou sem dados vinculados.")
   }
+  const cartoes = dados.cartoes.map((cartao, indice) =>
+    typeof cartao === "string" ? { id: -(indice + 1), nome: cartao } : cartao,
+  )
   return {
     nomeUsuario: usuario.nome,
     diaFechamento: dados.diaFechamento,
-    cartoes: dados.cartoes,
+    cartoes,
     despesas: dados.despesas,
     despesasPrevistas: dados.despesasPrevistas,
     notas: dados.notas,

@@ -380,16 +380,16 @@ function CalendarioMensal({
             >
               <span
                 className={`w-8 h-8 flex items-center justify-center rounded-full text-[13px] transition-all font-medium ${
-                  estaNaBorda
-                    ? "bg-[#1A56DB] text-white font-bold"
-                    : estaSelecionado
+                  ehFimDoCiclo
+                    ? "bg-[#DBEAFE] text-[#1A56DB] font-bold ring-1 ring-[#1A56DB]/30"
+                    : estaNaBorda
                       ? "bg-[#1A56DB] text-white font-bold"
-                      : estaDentro
-                        ? "bg-[#DBEAFE] text-[#1D4ED8]"
-                        : ehHoje
-                          ? "text-[#1A56DB] font-bold ring-1 ring-[#1A56DB]/30"
-                          : ehFimDoCiclo
-                            ? "text-[#1A56DB] font-bold group-hover:bg-blue-50"
+                      : estaSelecionado
+                        ? "bg-[#1A56DB] text-white font-bold"
+                        : estaDentro
+                          ? "bg-[#DBEAFE] text-[#1D4ED8]"
+                          : ehHoje
+                            ? "text-[#1A56DB] font-bold ring-1 ring-[#1A56DB]/30"
                             : "text-gray-700 group-hover:bg-gray-100"
                 }`}
               >
