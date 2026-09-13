@@ -5,9 +5,23 @@ import { abrirBanco } from "./banco.js"
 import { construirAplicacao } from "./aplicacao.js"
 import { protegerSenha, resumirToken } from "./seguranca.js"
 
+interface UsuarioAtivadoNoBanco {
+  status: string
+  codigo_ativacao_hash: string | null
+}
+
+interface AdministradorPendenteNoBanco {
+  nome: string
+  codigo_ativacao_hash: string
+}
+
 function inserirUsuario(
   banco: ReturnType<typeof abrirBanco>,
-  dados: { id: string login: string perfil: "administrador" | "usuario" },
+  dados: {
+    id: string
+    login: string
+    perfil: "administrador" | "usuario"
+  },
   senhaHash: string,
 ) {
   banco
@@ -209,7 +223,7 @@ test("ativa uma conta pendente sem receber a frase do cofre", async () => {
     .prepare(
       "SELECT status, codigo_ativacao_hash FROM usuarios WHERE id = 'usuario-pendente'",
     )
-    .get() as { status: string codigo_ativacao_hash: string | null }
+    .get() as UsuarioAtivadoNoBanco
   assert.equal(usuario.status, "ativo")
   assert.equal(usuario.codigo_ativacao_hash, null)
   assert.ok(
@@ -252,7 +266,7 @@ test("reemitir ativação administrativa invalida o código anterior", () => {
         FROM usuarios
        WHERE id = 'administrador-pendente'
     `)
-    .get() as { nome: string codigo_ativacao_hash: string }
+    .get() as AdministradorPendenteNoBanco
 
   assert.equal(resultado.reemitido, true)
   assert.equal(usuario.nome, "Novo nome")
