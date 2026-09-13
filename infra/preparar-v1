@@ -1,0 +1,62 @@
+#!/bin/sh
+
+set -eu
+
+ORIGEM="/var/lib/jenkins/workspace/gestao-life"
+LOGIN_ADMIN="${1:-admin}"
+NOME_ADMIN="${2:-Administrador}"
+
+if [ "$(id -u)" -ne 0 ]; then
+  echo "Execute este arquivo com sudo." >&2
+  exit 1
+fi
+
+NODE="/usr/bin/node"
+if [ ! -x "$NODE" ]; then NODE="/usr/local/bin/node"; fi
+if [ ! -x "$NODE" ]; then
+  echo "Node.js 22 não foi encontrado." >&2
+  exit 1
+fi
+VERSAO_NODE=$($NODE -p "Number(process.versions.node.split('.')[0])")
+if [ "$VERSAO_NODE" -lt 22 ]; then
+  echo "Node.js 22 ou superior é obrigatório." >&2
+  exit 1
+fi
+
+if [ ! -f /etc/letsencrypt/live/gestaolife.duckdns.org/fullchain.pem ] || [ ! -f /etc/letsencrypt/live/gestaolife.duckdns.org/privkey.pem ]; then
+  echo "O certificado HTTPS de gestaolife.duckdns.org precisa estar ativo antes da V1." >&2
+  exit 1
+fi
+
+if ! /usr/bin/id gestaolife > /dev/null 2>&1; then
+  /usr/sbin/useradd --system --home-dir /opt/gestaolife --shell /usr/sbin/nologin gestaolife
+fi
+
+/usr/bin/install -d -o gestaolife -g gestaolife -m 0750 /opt/gestaolife /var/lib/gestaolife
+/usr/bin/install -d -o www-data -g www-data -m 0755 /var/www/gestaolife/current
+/usr/bin/install -o root -g root -m 0755 "$ORIGEM/infra/deploy-gestaolife" /usr/local/sbin/deploy-gestaolife
+/usr/bin/install -o root -g root -m 0644 "$ORIGEM/infra/gestaolife-api.service" /etc/systemd/system/gestaolife-api.service
+/usr/bin/install -o root -g root -m 0644 "$ORIGEM/infra/nginx-gestaolife.conf" /etc/nginx/sites-available/gestaolife
+/usr/bin/ln -sfn /etc/nginx/sites-available/gestaolife /etc/nginx/sites-enabled/gestaolife
+
+/usr/bin/printf '%s\n' 'jenkins ALL=(root) NOPASSWD: /usr/local/sbin/deploy-gestaolife *' > /etc/sudoers.d/gestaolife-deploy
+/usr/bin/chmod 0440 /etc/sudoers.d/gestaolife-deploy
+/usr/sbin/visudo -cf /etc/sudoers.d/gestaolife-deploy
+
+/usr/bin/systemctl daemon-reload
+/usr/bin/systemctl enable gestaolife-api nginx
+
+/usr/local/sbin/deploy-gestaolife "v1-inicial"
+
+if /usr/sbin/runuser -u gestaolife -- env DATABASE_PATH=/var/lib/gestaolife/gestao-life.sqlite "$NODE" /opt/gestaolife/current/build/servidor/comandos/criar-administrador.js "$LOGIN_ADMIN" "$NOME_ADMIN"; then
+  /usr/bin/systemctl restart gestaolife-api
+else
+  echo "A implantação terminou, mas a conta administrativa já existe ou não pôde ser criada." >&2
+  exit 1
+fi
+
+# A remoção só ocorre depois que a nova API e a conta V1 estão prontas.
+# O conteúdo anterior não é migrado por decisão do proprietário.
+/usr/bin/rm -f /var/lib/gestaolife/db.json
+
+echo "Preparação única concluída. Guarde o código acima e ative a conta pelo navegador."

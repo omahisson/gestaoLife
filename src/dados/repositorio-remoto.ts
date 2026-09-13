@@ -5,10 +5,8 @@ import type {
   Meta,
   Nota,
 } from "../dominio/modelos"
-import type {
-  DadosDoUsuarioNoBanco,
-  UsuarioDoBanco,
-} from "./modelos-do-banco"
+import { criptografarBloco, descriptografarBloco } from "../seguranca/cofre"
+import { requisitarApi } from "../servicos/cliente-api"
 
 export interface DadosDoUsuario {
   nomeUsuario: string
@@ -20,118 +18,131 @@ export interface DadosDoUsuario {
   metas: Meta[]
 }
 
-const enderecoBase = (import.meta.env.VITE_API_URL ?? "/api").replace(/\/$/, "")
-const filasDeSalvamento = new Map<string, Promise<void>>()
-
-async function requisitar<T>(caminho: string, opcoes?: RequestInit): Promise<T> {
-  const resposta = await fetch(`${enderecoBase}${caminho}`, {
-    ...opcoes,
-    cache: "no-store",
-    headers: { "Content-Type": "application/json", ...opcoes?.headers },
-  })
-  if (!resposta.ok) {
-    throw new Error(`Falha na API: ${resposta.status} ${resposta.statusText}`)
-  }
-  return resposta.json() as Promise<T>
+interface BlocoDaApi {
+  tipo: string
+  revisao: number
+  nonce: string
+  conteudo: string
 }
 
-export function buscarUsuariosPorLogin(login: string): Promise<UsuarioDoBanco[]> {
-  return requisitar<UsuarioDoBanco[]>(
-    `/usuarios?login=${encodeURIComponent(login)}`,
-  )
+const revisoes = new Map<string, number>()
+const tiposConhecidos = new Set<string>()
+let filaDeSalvamento = Promise.resolve()
+
+function chaveDaRevisao(usuarioId: string, tipo: string) {
+  return `${usuarioId}\0${tipo}`
+}
+
+function mesDaDespesa(despesa: Despesa) {
+  return /^\d{4}-\d{2}/.exec(despesa.data)?.[0] ?? "sem-data"
+}
+
+function separarEmBlocos(dados: DadosDoUsuario) {
+  const blocos = new Map<string, unknown>()
+  blocos.set("configuracoes", {
+    nomeUsuario: dados.nomeUsuario,
+    diaFechamento: dados.diaFechamento,
+  })
+  blocos.set("financeiro", {
+    cartoes: dados.cartoes,
+    despesasPrevistas: dados.despesasPrevistas,
+  })
+  blocos.set("metas", dados.metas)
+
+  const despesasPorMes = new Map<string, Despesa[]>()
+  for (const despesa of dados.despesas) {
+    const tipo = `despesas:${mesDaDespesa(despesa)}`
+    despesasPorMes.set(tipo, [...(despesasPorMes.get(tipo) ?? []), despesa])
+  }
+  for (const [tipo, despesas] of despesasPorMes) blocos.set(tipo, despesas)
+
+  for (let inicio = 0; inicio < dados.notas.length; inicio += 50) {
+    const indice = Math.floor(inicio / 50) + 1
+    blocos.set(
+      `notas:${String(indice).padStart(4, "0")}`,
+      dados.notas.slice(inicio, inicio + 50),
+    )
+  }
+  return blocos
 }
 
 export async function carregarDadosDoUsuario(
   usuarioId: string,
+  nomeInicial: string,
 ): Promise<DadosDoUsuario> {
-  const identificador = encodeURIComponent(usuarioId)
-  const [usuario, dados] = await Promise.all([
-    requisitar<UsuarioDoBanco>(`/usuarios/${identificador}`),
-    requisitar<DadosDoUsuarioNoBanco>(`/dadosUsuarios/${identificador}`),
-  ])
-  if (!usuario.ativo || dados.usuarioId !== usuarioId) {
-    throw new Error("Usuário inativo ou sem dados vinculados.")
+  const blocos = await requisitarApi<BlocoDaApi[]>("/api/blocos")
+  const dados: DadosDoUsuario = {
+    nomeUsuario: nomeInicial,
+    diaFechamento: 30,
+    cartoes: [],
+    despesas: [],
+    despesasPrevistas: [],
+    notas: [],
+    metas: [],
   }
-  const cartoes = dados.cartoes.map((cartao, indice) =>
-    typeof cartao === "string" ? { id: -(indice + 1), nome: cartao } : cartao,
-  )
-  return {
-    nomeUsuario: usuario.nome,
-    diaFechamento: dados.diaFechamento,
-    cartoes,
-    despesas: dados.despesas,
-    despesasPrevistas: dados.despesasPrevistas,
-    notas: dados.notas,
-    metas: dados.metas,
+  revisoes.clear()
+  tiposConhecidos.clear()
+  for (const bloco of blocos) {
+    revisoes.set(chaveDaRevisao(usuarioId, bloco.tipo), bloco.revisao)
+    tiposConhecidos.add(bloco.tipo)
+    const conteudo = await descriptografarBloco<unknown>(
+      usuarioId,
+      bloco.tipo,
+      bloco.revisao,
+      bloco.nonce,
+      bloco.conteudo,
+    )
+    if (bloco.tipo === "configuracoes" || bloco.tipo === "financeiro") {
+      Object.assign(dados, conteudo)
+    } else if (bloco.tipo === "metas") {
+      dados.metas = (conteudo as Meta[])
+    } else if (bloco.tipo.startsWith("despesas:")) {
+      dados.despesas.push(...conteudo as Despesa[])
+    } else if (bloco.tipo.startsWith("notas:")) {
+      dados.notas.push(...conteudo as Nota[])
+    }
   }
+  dados.despesas.sort((a, b) => a.data.localeCompare(b.data) || a.id - b.id)
+  dados.notas.sort((a, b) => a.criadaEm.localeCompare(b.criadaEm))
+  return dados
 }
 
-async function executarSalvamento(
-  usuarioId: string,
-  dados: DadosDoUsuario,
-): Promise<void> {
-  const identificador = encodeURIComponent(usuarioId)
-  await Promise.all([
-    requisitar<UsuarioDoBanco>(`/usuarios/${identificador}`, {
-      method: "PATCH",
-      body: JSON.stringify({ nome: dados.nomeUsuario }),
-    }),
-    requisitar<DadosDoUsuarioNoBanco>(`/dadosUsuarios/${identificador}`, {
-      method: "PATCH",
-      body: JSON.stringify({
-        diaFechamento: dados.diaFechamento,
-        cartoes: dados.cartoes,
-        despesas: dados.despesas,
-        despesasPrevistas: dados.despesasPrevistas,
-        notas: dados.notas,
-        metas: dados.metas,
-      }),
-    }),
-  ])
-}
+async function executarSalvamento(usuarioId: string, dados: DadosDoUsuario) {
+  const blocos = separarEmBlocos(dados)
+  for (const [tipo, conteudoAberto] of blocos) {
+    const chave = chaveDaRevisao(usuarioId, tipo)
+    const revisaoEsperada = revisoes.get(chave) ?? 0
+    const novaRevisao = revisaoEsperada + 1
+    const criptografado = await criptografarBloco(
+      usuarioId,
+      tipo,
+      novaRevisao,
+      conteudoAberto,
+    )
+    const resposta = await requisitarApi<{ revisao: number }>(
+      `/api/blocos/${encodeURIComponent(tipo)}`,
+      {
+        method: "PUT",
+        body: JSON.stringify({ revisaoEsperada, ...criptografado }),
+      },
+    )
+    revisoes.set(chave, resposta.revisao)
+    tiposConhecidos.add(tipo)
+  }
 
-export function salvarDadosDoUsuario(
-  usuarioId: string,
-  dados: DadosDoUsuario,
-): Promise<void> {
-  const salvamentoAnterior = filasDeSalvamento.get(usuarioId) ?? Promise.resolve()
-  const salvamentoAtual = salvamentoAnterior
-    .catch(() => undefined)
-    .then(() => executarSalvamento(usuarioId, dados))
-
-  filasDeSalvamento.set(usuarioId, salvamentoAtual)
-  salvamentoAtual.then(
-    () => {
-      if (filasDeSalvamento.get(usuarioId) === salvamentoAtual) {
-        filasDeSalvamento.delete(usuarioId)
-      }
-    },
-    () => {
-      if (filasDeSalvamento.get(usuarioId) === salvamentoAtual) {
-        filasDeSalvamento.delete(usuarioId)
-      }
-    },
-  )
-  return salvamentoAtual
-}
-
-export async function criarContaNoBanco(
-  usuario: UsuarioDoBanco,
-  dados: DadosDoUsuarioNoBanco,
-): Promise<void> {
-  await requisitar<UsuarioDoBanco>("/usuarios", {
-    method: "POST",
-    body: JSON.stringify(usuario),
-  })
-  try {
-    await requisitar<DadosDoUsuarioNoBanco>("/dadosUsuarios", {
-      method: "POST",
-      body: JSON.stringify(dados),
-    })
-  } catch (erro) {
-    await fetch(`${enderecoBase}/usuarios/${encodeURIComponent(usuario.id)}`, {
+  for (const tipo of [...tiposConhecidos]) {
+    if (blocos.has(tipo)) continue
+    await requisitarApi<void>(`/api/blocos/${encodeURIComponent(tipo)}`, {
       method: "DELETE",
     })
-    throw erro
+    tiposConhecidos.delete(tipo)
+    revisoes.delete(chaveDaRevisao(usuarioId, tipo))
   }
+}
+
+export function salvarDadosDoUsuario(usuarioId: string, dados: DadosDoUsuario) {
+  filaDeSalvamento = filaDeSalvamento
+    .catch(() => undefined)
+    .then(() => executarSalvamento(usuarioId, dados))
+  return filaDeSalvamento
 }

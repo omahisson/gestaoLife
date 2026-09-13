@@ -11,7 +11,7 @@ import type {
   Nota,
 } from "../../dominio/modelos"
 
-export default function useDadosDoUsuario(usuarioId: string) {
+export default function useDadosDoUsuario(usuarioId: string, nomeInicial: string) {
   const [nomeUsuario, definirNomeUsuario] = useState("")
   const [diaFechamento, definirDiaFechamento] = useState(30)
   const [cartoes, definirCartoes] = useState<Cartao[]>([])
@@ -29,7 +29,7 @@ export default function useDadosDoUsuario(usuarioId: string) {
     let efeitoCancelado = false
     definirDadosCarregados(false)
     definirErroDosDados("")
-    carregarDadosDoUsuario(usuarioId)
+    carregarDadosDoUsuario(usuarioId, nomeInicial)
       .then((dados) => {
         if (efeitoCancelado) return
         definirNomeUsuario(dados.nomeUsuario)
@@ -49,7 +49,7 @@ export default function useDadosDoUsuario(usuarioId: string) {
     return () => {
       efeitoCancelado = true
     }
-  }, [usuarioId, indiceDeRecarga])
+  }, [usuarioId, nomeInicial, indiceDeRecarga])
 
   useEffect(() => {
     if (!dadosCarregados) return

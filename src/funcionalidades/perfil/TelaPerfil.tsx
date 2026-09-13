@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import AvatarIniciais from "../../componentes/AvatarIniciais"
 import {
   IconeConfirmar,
@@ -7,12 +7,13 @@ import {
   IconeMais,
 } from "../../componentes/icones/Icones"
 import { MESES_ABREVIADOS } from "../../dominio/constantes"
-import type { Cartao } from "../../dominio/modelos"
+import type { Cartao, PerfilAcesso } from "../../dominio/modelos"
 import { obterPeriodoDoCicloFinanceiro } from "../../dominio/regras-temporais"
 
 interface PropriedadesTelaPerfil {
   nomeUsuario: string
   loginUsuario: string
+  perfilAcesso: PerfilAcesso
   quantidadeDespesas: number
   quantidadeMetas: number
   quantidadeNotas: number
@@ -29,6 +30,7 @@ interface PropriedadesTelaPerfil {
 export default function TelaPerfil({
   nomeUsuario,
   loginUsuario,
+  perfilAcesso,
   quantidadeDespesas,
   quantidadeMetas,
   quantidadeNotas,
@@ -49,7 +51,42 @@ export default function TelaPerfil({
   const [novoCartao, definirNovoCartao] = useState("")
   const [cartaoEmEdicao, definirCartaoEmEdicao] = useState<number | null>(null)
   const [nomeCartaoTemporario, definirNomeCartaoTemporario] = useState("")
+  const [administracaoAberta, definirAdministracaoAberta] = useState(false)
+  const temporizadorAdministracao = useRef<ReturnType<typeof setTimeout> | null>(null)
   const periodoDoCiclo = obterPeriodoDoCicloFinanceiro(diaFechamento)
+
+  useEffect(() => {
+    function receberMensagem(evento: MessageEvent) {
+      if (
+        evento.origin === window.location.origin &&
+        evento.data === "gestao-life:fechar-administracao"
+      ) {
+        definirAdministracaoAberta(false)
+      }
+    }
+    window.addEventListener("message", receberMensagem)
+    return () => {
+      window.removeEventListener("message", receberMensagem)
+      if (temporizadorAdministracao.current) {
+        clearTimeout(temporizadorAdministracao.current)
+      }
+    }
+  }, [])
+
+  function iniciarPressionamentoAdministrativo() {
+    if (perfilAcesso !== "administrador") return
+    temporizadorAdministracao.current = setTimeout(
+      () => definirAdministracaoAberta(true),
+      3_000,
+    )
+  }
+
+  function cancelarPressionamentoAdministrativo() {
+    if (temporizadorAdministracao.current) {
+      clearTimeout(temporizadorAdministracao.current)
+      temporizadorAdministracao.current = null
+    }
+  }
 
   function formatarDataDoCiclo(data: Date) {
     return `${data.getDate()} de ${MESES_ABREVIADOS[data.getMonth()]}`
@@ -94,7 +131,20 @@ export default function TelaPerfil({
     <div className="flex-1 pt-14 pb-28 overflow-y-auto bg-[#EEF2F9]">
       <div className="px-5 pt-4 pb-5">
         <div className="bg-[#1A56DB] rounded-3xl p-5 shadow-sm flex items-center gap-4 relative overflow-hidden">
-          <div className="absolute -right-8 -top-8 w-32 h-32 rounded-full bg-white/10" />
+          {perfilAcesso === "administrador" ? (
+            <button
+              type="button"
+              className="absolute -right-8 -top-8 h-32 w-32 touch-none rounded-full bg-white/10"
+              aria-label="Abrir gerenciamento de usuários mantendo pressionado"
+              onPointerDown={iniciarPressionamentoAdministrativo}
+              onPointerUp={cancelarPressionamentoAdministrativo}
+              onPointerCancel={cancelarPressionamentoAdministrativo}
+              onPointerLeave={cancelarPressionamentoAdministrativo}
+              onContextMenu={(evento) => evento.preventDefault()}
+            />
+          ) : (
+            <div className="absolute -right-8 -top-8 h-32 w-32 rounded-full bg-white/10" />
+          )}
           <AvatarIniciais
             nome={nomeUsuario}
             tamanho={64}
@@ -408,6 +458,16 @@ export default function TelaPerfil({
           Sair da conta
         </button>
       </div>
+
+      {administracaoAberta && (
+        <div className="fixed inset-0 z-[100] bg-[#EEF2F9]">
+          <iframe
+            title="Gerenciamento de usuários"
+            src="/api/administracao/index.html"
+            className="h-full w-full border-0"
+          />
+        </div>
+      )}
     </div>
   )
 }

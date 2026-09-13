@@ -19,14 +19,10 @@ export default defineConfig({
     host: enderecoServidor,
     port: portaServidor,
     strictPort: true,
-    watch: {
-      ignored: ["**/db.json"],
-    },
     proxy: {
       "/api": {
         target: enderecoApi,
         changeOrigin: true,
-        rewrite: (caminho) => caminho.replace(/^\/api/, ""),
       },
     },
   },

@@ -6,10 +6,13 @@ After=network.target
 Type=simple
 User=gestaolife
 Group=gestaolife
-WorkingDirectory=/opt/gestaolife
+WorkingDirectory=/opt/gestaolife/current
 Environment=NODE_ENV=production
 Environment=PATH=/usr/local/bin:/usr/bin:/bin
-ExecStart=/opt/gestaolife/node_modules/.bin/json-server /var/lib/gestaolife/db.json --port 3001 --host 127.0.0.1
+Environment=DATABASE_PATH=/var/lib/gestaolife/gestao-life.sqlite
+Environment=API_PORT=3001
+Environment=API_HOST=127.0.0.1
+ExecStart=/usr/bin/env node /opt/gestaolife/current/build/servidor/principal.js
 Restart=on-failure
 RestartSec=3
 UMask=0077
@@ -19,7 +22,7 @@ PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
 ReadWritePaths=/var/lib/gestaolife
-MemoryMax=128M
+MemoryMax=192M
 
 [Install]
 WantedBy=multi-user.target

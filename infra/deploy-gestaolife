@@ -4,73 +4,81 @@ set -eu
 
 ORIGEM="/var/lib/jenkins/workspace/gestao-life"
 DESTINO_WEB="/var/www/gestaolife/current"
-DESTINO_API="/opt/gestaolife"
-DESTINO_PUBLICO_API="$DESTINO_API/public"
+RAIZ_API="/opt/gestaolife"
+RELEASES="$RAIZ_API/releases"
+ATUAL="$RAIZ_API/current"
 DIRETORIO_BANCO="/var/lib/gestaolife"
-ARQUIVO_BANCO="$DIRETORIO_BANCO/db.json"
-PNPM="/usr/local/bin/pnpm"
+VERSAO="${1:-manual}"
+
+case "$VERSAO" in
+  *[!A-Za-z0-9._-]*) echo "Identificador de versão inválido." >&2; exit 1 ;;
+esac
+
+RELEASE="$RELEASES/$VERSAO"
 
 validar_arquivo() {
-    if [ ! -f "$1" ]; then
-        echo "Arquivo obrigatório não encontrado: $1" >&2
-        exit 1
-    fi
+  if [ ! -f "$1" ]; then
+    echo "Arquivo obrigatório não encontrado: $1" >&2
+    exit 1
+  fi
 }
 
 validar_arquivo "$ORIGEM/dist/index.html"
+validar_arquivo "$ORIGEM/dist-admin/index.html"
+validar_arquivo "$ORIGEM/build/servidor/principal.js"
 validar_arquivo "$ORIGEM/package.json"
-validar_arquivo "$ORIGEM/pnpm-lock.yaml"
-validar_arquivo "$ORIGEM/db.json"
+validar_arquivo "$ORIGEM/package-lock.json"
 
-if [ ! -x "$PNPM" ]; then
-    echo "pnpm não encontrado em $PNPM" >&2
-    exit 1
+NODE="/usr/bin/node"
+NPM="/usr/bin/npm"
+if [ ! -x "$NODE" ]; then NODE="/usr/local/bin/node"; fi
+if [ ! -x "$NPM" ]; then NPM="/usr/local/bin/npm"; fi
+if [ ! -x "$NODE" ] || [ ! -x "$NPM" ]; then
+  echo "Node.js e npm não foram encontrados." >&2
+  exit 1
 fi
 
 /usr/bin/install -d -o www-data -g www-data -m 0755 "$DESTINO_WEB"
-/usr/bin/install -d -o gestaolife -g gestaolife -m 0750 "$DESTINO_API"
-/usr/bin/install -d -o gestaolife -g gestaolife -m 0750 "$DESTINO_PUBLICO_API"
-/usr/bin/install -d -o gestaolife -g gestaolife -m 0750 "$DIRETORIO_BANCO"
+/usr/bin/install -d -o gestaolife -g gestaolife -m 0750 "$RELEASES" "$DIRETORIO_BANCO"
 
-if [ ! -f "$ARQUIVO_BANCO" ]; then
-    /usr/bin/install -o gestaolife -g gestaolife -m 0600 "$ORIGEM/db.json" "$ARQUIVO_BANCO"
-    echo "Banco inicial criado em $ARQUIVO_BANCO."
+if [ -e "$RELEASE" ]; then
+  echo "A versão $VERSAO já existe." >&2
+  exit 1
 fi
 
-ATUALIZAR_DEPENDENCIAS=0
+/usr/bin/install -d -o gestaolife -g gestaolife -m 0750 "$RELEASE"
+/usr/bin/rsync -a --chown=gestaolife:gestaolife "$ORIGEM/build/" "$RELEASE/build/"
+/usr/bin/rsync -a --chown=gestaolife:gestaolife "$ORIGEM/dist-admin/" "$RELEASE/dist-admin/"
+/usr/bin/install -o gestaolife -g gestaolife -m 0640 "$ORIGEM/package.json" "$RELEASE/package.json"
+/usr/bin/install -o gestaolife -g gestaolife -m 0640 "$ORIGEM/package-lock.json" "$RELEASE/package-lock.json"
 
-if ! /usr/bin/cmp -s "$ORIGEM/package.json" "$DESTINO_API/package.json"; then
-    ATUALIZAR_DEPENDENCIAS=1
-fi
+/usr/sbin/runuser -u gestaolife -- "$NPM" --prefix "$RELEASE" ci --omit=dev --no-audit --no-fund
 
-if ! /usr/bin/cmp -s "$ORIGEM/pnpm-lock.yaml" "$DESTINO_API/pnpm-lock.yaml"; then
-    ATUALIZAR_DEPENDENCIAS=1
-fi
-
-/usr/bin/install -o gestaolife -g gestaolife -m 0644 "$ORIGEM/package.json" "$DESTINO_API/package.json"
-/usr/bin/install -o gestaolife -g gestaolife -m 0644 "$ORIGEM/pnpm-lock.yaml" "$DESTINO_API/pnpm-lock.yaml"
-
-if [ "$ATUALIZAR_DEPENDENCIAS" -eq 1 ] || [ ! -x "$DESTINO_API/node_modules/.bin/json-server" ]; then
-    /usr/sbin/runuser -u gestaolife -- "$PNPM" --dir "$DESTINO_API" install --prod --frozen-lockfile --ignore-scripts
-fi
+ANTERIOR=""
+if [ -L "$ATUAL" ]; then ANTERIOR=$(/usr/bin/readlink -f "$ATUAL"); fi
+/usr/bin/ln -sfn "$RELEASE" "$RAIZ_API/current.novo"
+/usr/bin/mv -Tf "$RAIZ_API/current.novo" "$ATUAL"
 
 /usr/bin/rsync -a --delete --chown=www-data:www-data "$ORIGEM/dist/" "$DESTINO_WEB/"
-
 /usr/sbin/nginx -t
 /usr/bin/systemctl restart gestaolife-api
 
 TENTATIVA=1
-while ! /usr/bin/curl -fsS "http://127.0.0.1:3001/usuarios" > /dev/null; do
-    if [ "$TENTATIVA" -ge 10 ]; then
-        echo "A API não respondeu após 10 tentativas." >&2
-        /usr/bin/journalctl -u gestaolife-api -n 30 --no-pager >&2
-        exit 1
+while ! /usr/bin/curl -fsS "http://127.0.0.1:3001/api/saude" > /dev/null; do
+  if [ "$TENTATIVA" -ge 10 ]; then
+    echo "A API não respondeu após 10 tentativas." >&2
+    /usr/bin/journalctl -u gestaolife-api -n 30 --no-pager >&2
+    if [ -n "$ANTERIOR" ] && [ -d "$ANTERIOR" ]; then
+      /usr/bin/ln -sfn "$ANTERIOR" "$RAIZ_API/current.anterior"
+      /usr/bin/mv -Tf "$RAIZ_API/current.anterior" "$ATUAL"
+      /usr/bin/systemctl restart gestaolife-api
+      echo "A versão anterior da API foi restaurada." >&2
     fi
-
-    TENTATIVA=$((TENTATIVA + 1))
-    /usr/bin/sleep 1
+    exit 1
+  fi
+  TENTATIVA=$((TENTATIVA + 1))
+  /usr/bin/sleep 1
 done
 
 /usr/bin/systemctl reload nginx
-
-echo "Gestão Life implantado. O banco persistente não foi sobrescrito."
+echo "Gestão Life V1 implantado na versão $VERSAO."

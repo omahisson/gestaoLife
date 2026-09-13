@@ -27,19 +27,19 @@ pipeline {
 
     stage('Instalar dependências') {
       steps {
-        sh 'pnpm install --frozen-lockfile --prefer-offline'
+        sh 'npm ci --no-audit --no-fund'
       }
     }
 
     stage('Validar e compilar') {
       steps {
-        sh 'pnpm run check'
+        sh 'npm run check'
       }
     }
 
     stage('Implantar') {
       steps {
-        sh 'sudo /usr/local/sbin/deploy-gestaolife'
+        sh 'sudo /usr/local/sbin/deploy-gestaolife "$BUILD_NUMBER"'
       }
     }
   }

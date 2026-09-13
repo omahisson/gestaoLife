@@ -160,7 +160,7 @@ export default function GestaoLifeApp({
     dadosCarregados,
     erroDosDados,
     recarregarDados,
-  } = useDadosDoUsuario(usuario.id)
+  } = useDadosDoUsuario(usuario.id, usuario.nome)
   const gerarProximoIdentificador = useGeradorDeIdentificador()
 
   const [aba, definirAba] = useState<AbaPrincipal>("inicio")
@@ -1586,6 +1586,7 @@ export default function GestaoLifeApp({
           <TelaPerfil
             nomeUsuario={nomeUsuario}
             loginUsuario={usuario.login}
+            perfilAcesso={usuario.perfilAcesso}
             quantidadeDespesas={despesas.length}
             quantidadeMetas={metas.length}
             quantidadeNotas={notas.filter((nota) => !nota.arquivada).length}

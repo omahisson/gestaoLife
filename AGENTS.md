@@ -16,11 +16,11 @@ This is the canonical project structure. Start with task-relevant files below. O
 - `src/main.tsx` - React entrypoint; imports `src/index.css` and mounts `src/App.tsx` into the `#root` element
 - `src/App.tsx` - Primary application component and the usual starting point for UI work
 - `src/index.css` - Global CSS entrypoint and Tailwind CSS v4 import
-- `db.json` - Versioned initial database with users and user-scoped records
+- `servidor/` - API autenticada, banco SQLite e comandos operacionais
 - `index.html` - Vite HTML shell containing the `#root` element and loading `src/main.tsx`
 - `package.json` - Project dependencies and the Vite build, development, preview, and formatting scripts
 - `vite.config.ts` - Vite configuration with React, Tailwind CSS v4, and the `@` alias for `src`
-- `.mise.toml` - Toolchain versions for Node.js and pnpm
+- `.mise.toml` - Toolchain version for Node.js
 
 ## Dependencies
 
