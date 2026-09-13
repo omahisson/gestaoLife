@@ -17,11 +17,41 @@ interface ParametrosKdf {
 let chaveDeDados: CryptoKey | null = null
 let usuarioDoCofre = ""
 
+const alfabetoDaFrase =
+  "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789"
+const quantidadeDeCaracteresDaFrase = 30
+const tamanhoDoGrupoDaFrase = 5
+
 const parametrosAtuais: ParametrosKdf = {
   versao: 1,
   memoriaKiB: 19_456,
   iteracoes: 2,
   paralelismo: 1,
+}
+
+export function gerarFraseDeProtecao() {
+  const limiteSemVies =
+    Math.floor(256 / alfabetoDaFrase.length) * alfabetoDaFrase.length
+  let caracteres = ""
+
+  while (caracteres.length < quantidadeDeCaracteresDaFrase) {
+    const bytes = crypto.getRandomValues(new Uint8Array(40))
+    for (const byte of bytes) {
+      if (byte >= limiteSemVies) continue
+      caracteres += alfabetoDaFrase.charAt(byte % alfabetoDaFrase.length)
+      if (caracteres.length === quantidadeDeCaracteresDaFrase) break
+    }
+  }
+
+  const grupos: string[] = []
+  for (
+    let inicio = 0;
+    inicio < caracteres.length;
+    inicio += tamanhoDoGrupoDaFrase
+  ) {
+    grupos.push(caracteres.slice(inicio, inicio + tamanhoDoGrupoDaFrase))
+  }
+  return grupos.join("-")
 }
 
 function bytesParaBase64(bytes: Uint8Array) {

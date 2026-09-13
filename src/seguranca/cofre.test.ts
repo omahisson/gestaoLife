@@ -6,7 +6,19 @@ import {
   criptografarBloco,
   descriptografarBloco,
   desbloquearCofre,
+  gerarFraseDeProtecao,
 } from "./cofre"
+
+test("gera uma frase de proteção forte e legível", () => {
+  const primeira = gerarFraseDeProtecao()
+  const segunda = gerarFraseDeProtecao()
+
+  assert.match(
+    primeira,
+    /^[ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789]{5}(-[ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789]{5}){5}$/,
+  )
+  assert.notEqual(primeira, segunda)
+})
 
 test("a frase abre a chave e a autenticação vincula usuário, bloco e revisão", async () => {
   const usuarioId = "usuario-seguro"

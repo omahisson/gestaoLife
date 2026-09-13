@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from "react"
 import type { UsuarioAutenticado } from "../../dominio/modelos"
+import { gerarFraseDeProtecao } from "../../seguranca/cofre"
 import {
   abrirCofreDoUsuario,
   ativarUsuario,
@@ -30,7 +31,8 @@ export default function TelaLogin({
   const [confirmacaoSenha, definirConfirmacaoSenha] = useState("")
   const [codigo, definirCodigo] = useState("")
   const [frase, definirFrase] = useState("")
-  const [confirmacaoFrase, definirConfirmacaoFrase] = useState("")
+  const [fraseGuardada, definirFraseGuardada] = useState(false)
+  const [fraseCopiada, definirFraseCopiada] = useState(false)
   const [mensagemDeErro, definirMensagemDeErro] = useState("")
   const [processando, definirProcessando] = useState(false)
 
@@ -66,13 +68,11 @@ export default function TelaLogin({
       }
       if (senha !== confirmacaoSenha)
         throw new Error("As senhas não coincidem.")
-      if (frase.length < 12) {
-        throw new Error(
-          "A frase de proteção deve ter pelo menos 12 caracteres.",
-        )
+      if (!frase) {
+        throw new Error("Não foi possível gerar a frase de proteção.")
       }
-      if (frase !== confirmacaoFrase) {
-        throw new Error("As frases de proteção não coincidem.")
+      if (!fraseGuardada) {
+        throw new Error("Confirme que guardou a frase de proteção.")
       }
       const usuario = await ativarUsuario({
         login,
@@ -105,6 +105,34 @@ export default function TelaLogin({
     aoEncerrarSessao()
   }
 
+  function iniciarAtivacao() {
+    definirMensagemDeErro("")
+    definirFrase(gerarFraseDeProtecao())
+    definirFraseGuardada(false)
+    definirFraseCopiada(false)
+    definirEtapa("ativacao")
+  }
+
+  function voltarAoAcesso() {
+    definirMensagemDeErro("")
+    definirFrase("")
+    definirFraseGuardada(false)
+    definirFraseCopiada(false)
+    definirEtapa("acesso")
+  }
+
+  async function copiarFrase() {
+    try {
+      await navigator.clipboard.writeText(frase)
+      definirFraseCopiada(true)
+      definirMensagemDeErro("")
+    } catch {
+      definirMensagemDeErro(
+        "Não foi possível copiar automaticamente. Selecione a frase e copie manualmente.",
+      )
+    }
+  }
+
   const titulo =
     etapa === "ativacao"
       ? "Ativar conta"
@@ -127,7 +155,7 @@ export default function TelaLogin({
               {etapa === "cofre"
                 ? `Sessão de @${usuarioPendente?.login}. A frase abre seus dados somente neste aparelho.`
                 : etapa === "ativacao"
-                  ? "Use o código recebido e crie dois segredos diferentes."
+                  ? "Use o código recebido, crie sua senha e guarde a frase gerada."
                   : "Acesse suas finanças, metas e anotações."}
             </p>
           </div>
@@ -174,14 +202,10 @@ export default function TelaLogin({
               autocomplete="new-password"
             />
           )}
-          {(etapa === "cofre" || etapa === "ativacao") && (
+          {etapa === "cofre" && (
             <Campo
               id="frase"
-              rotulo={
-                etapa === "ativacao"
-                  ? "Crie a frase de proteção"
-                  : "Frase de proteção"
-              }
+              rotulo="Frase de proteção"
               valor={frase}
               aoAlterar={definirFrase}
               tipo="password"
@@ -190,14 +214,53 @@ export default function TelaLogin({
             />
           )}
           {etapa === "ativacao" && (
-            <Campo
-              id="confirmacao-frase"
-              rotulo="Confirme a frase de proteção"
-              valor={confirmacaoFrase}
-              aoAlterar={definirConfirmacaoFrase}
-              tipo="password"
-              autocomplete="off"
-            />
+            <div className="space-y-3">
+              <div>
+                <div className="mb-2 flex items-center justify-between gap-3">
+                  <label
+                    className="block text-xs font-semibold uppercase tracking-widest text-gray-500"
+                    htmlFor="frase-gerada"
+                  >
+                    Frase de proteção gerada
+                  </label>
+                  <button
+                    type="button"
+                    onClick={copiarFrase}
+                    className="shrink-0 text-sm font-bold text-[#1A56DB]"
+                  >
+                    {fraseCopiada ? "Copiada" : "Copiar"}
+                  </button>
+                </div>
+                <input
+                  id="frase-gerada"
+                  readOnly
+                  value={frase}
+                  onFocus={(evento) => evento.currentTarget.select()}
+                  className="min-h-14 w-full rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 font-mono text-sm font-bold leading-6 text-gray-900 outline-none focus:border-[#1A56DB]"
+                />
+              </div>
+
+              <div
+                role="alert"
+                className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold leading-5 text-red-700"
+              >
+                Se você perder esta frase, perderá o acesso aos seus dados PARA
+                SEMPRE. Não existe recuperação.
+              </div>
+
+              <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-gray-200 px-4 py-3 text-sm font-medium leading-5 text-gray-700">
+                <input
+                  type="checkbox"
+                  checked={fraseGuardada}
+                  onChange={(evento) =>
+                    definirFraseGuardada(evento.target.checked)
+                  }
+                  className="mt-0.5 h-5 w-5 shrink-0 accent-[#1A56DB]"
+                />
+                Guardei a frase em um local seguro e entendo que ela não poderá
+                ser recuperada.
+              </label>
+            </div>
           )}
 
           {mensagemDeErro && (
@@ -226,7 +289,7 @@ export default function TelaLogin({
           {etapa === "acesso" && (
             <button
               type="button"
-              onClick={() => definirEtapa("ativacao")}
+              onClick={iniciarAtivacao}
               className="w-full py-2 text-sm font-semibold text-[#1A56DB]"
             >
               Ativar uma conta
@@ -235,7 +298,7 @@ export default function TelaLogin({
           {etapa === "ativacao" && (
             <button
               type="button"
-              onClick={() => definirEtapa("acesso")}
+              onClick={voltarAoAcesso}
               className="w-full py-2 text-sm font-semibold text-[#1A56DB]"
             >
               Voltar ao acesso
