@@ -1,12 +1,13 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
+import { criarOuReemitirAdministradorPendente } from "./administradores.js"
 import { abrirBanco } from "./banco.js"
 import { construirAplicacao } from "./aplicacao.js"
 import { protegerSenha, resumirToken } from "./seguranca.js"
 
 function inserirUsuario(
   banco: ReturnType<typeof abrirBanco>,
-  dados: { id: string; login: string; perfil: "administrador" | "usuario" },
+  dados: { id: string login: string perfil: "administrador" | "usuario" },
   senhaHash: string,
 ) {
   banco
@@ -208,7 +209,7 @@ test("ativa uma conta pendente sem receber a frase do cofre", async () => {
     .prepare(
       "SELECT status, codigo_ativacao_hash FROM usuarios WHERE id = 'usuario-pendente'",
     )
-    .get() as { status: string; codigo_ativacao_hash: string | null }
+    .get() as { status: string codigo_ativacao_hash: string | null }
   assert.equal(usuario.status, "ativo")
   assert.equal(usuario.codigo_ativacao_hash, null)
   assert.ok(
@@ -220,5 +221,42 @@ test("ativa uma conta pendente sem receber a frase do cofre", async () => {
   )
 
   await api.close()
+  banco.close()
+})
+
+test("reemitir ativação administrativa invalida o código anterior", () => {
+  const banco = abrirBanco(":memory:")
+  const codigoAnterior = "CODIGO-ANTERIOR"
+  banco
+    .prepare(`
+      INSERT INTO usuarios
+        (id, login, nome, perfil, status, codigo_ativacao_hash,
+         codigo_ativacao_expira_em, criado_em)
+      VALUES ('administrador-pendente', 'admin', 'Administrador',
+              'administrador', 'pendente', ?, ?, ?)
+    `)
+    .run(
+      resumirToken(codigoAnterior),
+      new Date(Date.now() + 60_000).toISOString(),
+      new Date().toISOString(),
+    )
+
+  const resultado = criarOuReemitirAdministradorPendente(
+    banco,
+    "admin",
+    "Novo nome",
+  )
+  const usuario = banco
+    .prepare(`
+      SELECT nome, codigo_ativacao_hash
+        FROM usuarios
+       WHERE id = 'administrador-pendente'
+    `)
+    .get() as { nome: string codigo_ativacao_hash: string }
+
+  assert.equal(resultado.reemitido, true)
+  assert.equal(usuario.nome, "Novo nome")
+  assert.notEqual(usuario.codigo_ativacao_hash, resumirToken(codigoAnterior))
+  assert.equal(usuario.codigo_ativacao_hash, resumirToken(resultado.codigo))
   banco.close()
 })
