@@ -34,6 +34,8 @@ export function abrirBanco(caminho: string) {
       senha_hash TEXT,
       codigo_ativacao_hash TEXT,
       codigo_ativacao_expira_em TEXT,
+      conta_principal INTEGER NOT NULL DEFAULT 0
+        CHECK (conta_principal IN (0, 1)),
       criado_em TEXT NOT NULL
     ) STRICT;
 
@@ -65,7 +67,49 @@ export function abrirBanco(caminho: string) {
     CREATE INDEX IF NOT EXISTS sessoes_por_usuario
       ON sessoes(usuario_id);
 
-    PRAGMA user_version = 1;
+  `)
+
+  const colunasDeUsuario = banco
+    .prepare("PRAGMA table_info(usuarios)")
+    .all() as unknown as Array<{ name: string }>
+  if (!colunasDeUsuario.some((coluna) => coluna.name === "conta_principal")) {
+    banco.exec(`
+      ALTER TABLE usuarios
+        ADD COLUMN conta_principal INTEGER NOT NULL DEFAULT 0
+        CHECK (conta_principal IN (0, 1));
+    `)
+  }
+
+  banco.exec(`
+    UPDATE usuarios
+       SET conta_principal = 1
+     WHERE id = (
+       SELECT id FROM usuarios ORDER BY criado_em ASC, rowid ASC LIMIT 1
+     )
+       AND NOT EXISTS (
+         SELECT 1 FROM usuarios WHERE conta_principal = 1
+       );
+
+    CREATE UNIQUE INDEX IF NOT EXISTS somente_uma_conta_principal
+      ON usuarios(conta_principal) WHERE conta_principal = 1;
+
+    CREATE TRIGGER IF NOT EXISTS definir_primeira_conta_como_principal
+    AFTER INSERT ON usuarios
+    WHEN NOT EXISTS (
+      SELECT 1 FROM usuarios WHERE conta_principal = 1
+    )
+    BEGIN
+      UPDATE usuarios SET conta_principal = 1 WHERE id = NEW.id;
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS impedir_exclusao_da_conta_principal
+    BEFORE DELETE ON usuarios
+    WHEN OLD.conta_principal = 1
+    BEGIN
+      SELECT RAISE(ABORT, 'A primeira conta não pode ser excluída.');
+    END;
+
+    PRAGMA user_version = 2;
   `)
   return banco
 }

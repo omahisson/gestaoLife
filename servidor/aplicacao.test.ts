@@ -1,4 +1,8 @@
 import assert from "node:assert/strict"
+import { mkdtempSync, rmSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import { DatabaseSync } from "node:sqlite"
 import { test } from "node:test"
 import { criarOuReemitirAdministradorPendente } from "./administradores.js"
 import { abrirBanco } from "./banco.js"
@@ -13,6 +17,18 @@ interface UsuarioAtivadoNoBanco {
 interface AdministradorPendenteNoBanco {
   nome: string
   codigo_ativacao_hash: string
+}
+
+interface UsuarioDaAdministracao {
+  id: string
+  login: string
+  nome: string
+  inapagavel: boolean
+}
+
+interface ContaEditadaNoBanco {
+  login: string
+  nome: string
 }
 
 function inserirUsuario(
@@ -286,4 +302,135 @@ test("reemitir ativação administrativa invalida o código anterior", () => {
   assert.notEqual(usuario.codigo_ativacao_hash, resumirToken(codigoAnterior))
   assert.equal(usuario.codigo_ativacao_hash, resumirToken(resultado.codigo))
   banco.close()
+})
+
+test("administra contas e impede excluir a primeira", async () => {
+  const banco = abrirBanco(":memory:")
+  const senha = "senha-administrativa"
+  const senhaHash = await protegerSenha(senha)
+  inserirUsuario(
+    banco,
+    { id: "conta-principal", login: "admin", perfil: "administrador" },
+    senhaHash,
+  )
+  const api = await construirAplicacao({ banco })
+  const autenticacao = await api.inject({
+    method: "POST",
+    url: "/api/sessao",
+    payload: { login: "admin", senha },
+  })
+  const headers = {
+    cookie: cookieDaResposta(autenticacao.headers["set-cookie"]),
+    "x-csrf-token": autenticacao.json().csrfToken as string,
+  }
+
+  const criacao = await api.inject({
+    method: "POST",
+    url: "/api/admin/usuarios",
+    headers,
+    payload: { nome: "Nova pessoa", login: "nova.pessoa" },
+  })
+  assert.equal(criacao.statusCode, 201)
+  const contaCriada = criacao.json() as { id: string }
+
+  const listagem = await api.inject({
+    method: "GET",
+    url: "/api/admin/usuarios",
+    headers,
+  })
+  const usuarios = listagem.json() as UsuarioDaAdministracao[]
+  assert.equal(
+    usuarios.find((usuario) => usuario.id === "conta-principal")?.inapagavel,
+    true,
+  )
+  assert.equal(
+    usuarios.find((usuario) => usuario.id === contaCriada.id)?.inapagavel,
+    false,
+  )
+
+  const edicao = await api.inject({
+    method: "PATCH",
+    url: `/api/admin/usuarios/${contaCriada.id}`,
+    headers,
+    payload: { nome: "Pessoa editada", login: "pessoa.editada" },
+  })
+  assert.equal(edicao.statusCode, 204)
+  const contaEditada = banco
+    .prepare("SELECT login, nome FROM usuarios WHERE id = ?")
+    .get(contaCriada.id) as ContaEditadaNoBanco
+  assert.equal(contaEditada.login, "pessoa.editada")
+  assert.equal(contaEditada.nome, "Pessoa editada")
+
+  const exclusaoPrincipal = await api.inject({
+    method: "DELETE",
+    url: "/api/admin/usuarios/conta-principal",
+    headers,
+  })
+  assert.equal(exclusaoPrincipal.statusCode, 400)
+
+  const exclusao = await api.inject({
+    method: "DELETE",
+    url: `/api/admin/usuarios/${contaCriada.id}`,
+    headers,
+  })
+  assert.equal(exclusao.statusCode, 204)
+  assert.equal(
+    banco.prepare("SELECT id FROM usuarios WHERE id = ?").get(contaCriada.id),
+    undefined,
+  )
+
+  await api.close()
+  banco.close()
+})
+
+test("migra a base existente e protege a conta mais antiga", () => {
+  const diretorio = mkdtempSync(join(tmpdir(), "gestao-life-migracao-"))
+  const caminho = join(diretorio, "base.sqlite")
+  try {
+    const bancoAntigo = new DatabaseSync(caminho)
+    bancoAntigo.exec(`
+      CREATE TABLE usuarios (
+        id TEXT PRIMARY KEY,
+        login TEXT NOT NULL UNIQUE,
+        nome TEXT NOT NULL,
+        perfil TEXT NOT NULL,
+        status TEXT NOT NULL,
+        senha_hash TEXT,
+        codigo_ativacao_hash TEXT,
+        codigo_ativacao_expira_em TEXT,
+        criado_em TEXT NOT NULL
+      ) STRICT;
+      INSERT INTO usuarios
+        (id, login, nome, perfil, status, criado_em)
+      VALUES
+        ('primeira', 'admin', 'Administrador', 'administrador', 'ativo',
+         '2026-01-01T00:00:00.000Z'),
+        ('segunda', 'pessoa', 'Pessoa', 'usuario', 'ativo',
+         '2026-01-02T00:00:00.000Z');
+      PRAGMA user_version = 1;
+    `)
+    bancoAntigo.close()
+
+    const bancoMigrado = abrirBanco(caminho)
+    const principal = bancoMigrado
+      .prepare("SELECT id FROM usuarios WHERE conta_principal = 1")
+      .get() as { id: string }
+    assert.equal(principal.id, "primeira")
+    assert.throws(
+      () =>
+        bancoMigrado
+          .prepare("DELETE FROM usuarios WHERE id = 'primeira'")
+          .run(),
+      /primeira conta não pode ser excluída/,
+    )
+    assert.equal(
+      (bancoMigrado.prepare("PRAGMA user_version").get() as {
+        user_version: number
+      }).user_version,
+      2,
+    )
+    bancoMigrado.close()
+  } finally {
+    rmSync(diretorio, { recursive: true, force: true })
+  }
 })

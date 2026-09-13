@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useState } from "react"
 import AvatarIniciais from "../../componentes/AvatarIniciais"
 import {
   IconeConfirmar,
@@ -52,7 +52,6 @@ export default function TelaPerfil({
   const [cartaoEmEdicao, definirCartaoEmEdicao] = useState<number | null>(null)
   const [nomeCartaoTemporario, definirNomeCartaoTemporario] = useState("")
   const [administracaoAberta, definirAdministracaoAberta] = useState(false)
-  const temporizadorAdministracao = useRef<ReturnType<typeof setTimeout> | null>(null)
   const periodoDoCiclo = obterPeriodoDoCicloFinanceiro(diaFechamento)
 
   useEffect(() => {
@@ -67,26 +66,8 @@ export default function TelaPerfil({
     window.addEventListener("message", receberMensagem)
     return () => {
       window.removeEventListener("message", receberMensagem)
-      if (temporizadorAdministracao.current) {
-        clearTimeout(temporizadorAdministracao.current)
-      }
     }
   }, [])
-
-  function iniciarPressionamentoAdministrativo() {
-    if (perfilAcesso !== "administrador") return
-    temporizadorAdministracao.current = setTimeout(
-      () => definirAdministracaoAberta(true),
-      3_000,
-    )
-  }
-
-  function cancelarPressionamentoAdministrativo() {
-    if (temporizadorAdministracao.current) {
-      clearTimeout(temporizadorAdministracao.current)
-      temporizadorAdministracao.current = null
-    }
-  }
 
   function formatarDataDoCiclo(data: Date) {
     return `${data.getDate()} de ${MESES_ABREVIADOS[data.getMonth()]}`
@@ -134,13 +115,9 @@ export default function TelaPerfil({
           {perfilAcesso === "administrador" ? (
             <button
               type="button"
-              className="absolute -right-8 -top-8 h-32 w-32 touch-none rounded-full bg-white/10"
-              aria-label="Abrir gerenciamento de usuários mantendo pressionado"
-              onPointerDown={iniciarPressionamentoAdministrativo}
-              onPointerUp={cancelarPressionamentoAdministrativo}
-              onPointerCancel={cancelarPressionamentoAdministrativo}
-              onPointerLeave={cancelarPressionamentoAdministrativo}
-              onContextMenu={(evento) => evento.preventDefault()}
+              className="absolute -right-8 -top-8 h-32 w-32 rounded-full bg-white/10"
+              aria-label="Abrir gerenciamento de usuários"
+              onClick={() => definirAdministracaoAberta(true)}
             />
           ) : (
             <div className="absolute -right-8 -top-8 h-32 w-32 rounded-full bg-white/10" />

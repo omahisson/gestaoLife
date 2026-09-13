@@ -8,6 +8,7 @@ interface Usuario {
   nome: string
   perfilAcesso: "administrador" | "usuario"
   status: "pendente" | "ativo" | "inativo"
+  inapagavel: boolean
 }
 
 interface Sessao {
@@ -42,6 +43,11 @@ function AplicacaoAdministrativa() {
   const [nome, definirNome] = useState("")
   const [login, definirLogin] = useState("")
   const [codigo, definirCodigo] = useState("")
+  const [usuarioEmEdicao, definirUsuarioEmEdicao] = useState<string | null>(
+    null,
+  )
+  const [nomeEmEdicao, definirNomeEmEdicao] = useState("")
+  const [loginEmEdicao, definirLoginEmEdicao] = useState("")
   const [erro, definirErro] = useState("")
   const [carregando, definirCarregando] = useState(true)
 
@@ -100,6 +106,60 @@ function AplicacaoAdministrativa() {
     } catch (falha) {
       definirErro(
         falha instanceof Error ? falha.message : "Não foi possível alterar.",
+      )
+    }
+  }
+
+  function iniciarEdicao(usuario: Usuario) {
+    definirUsuarioEmEdicao(usuario.id)
+    definirNomeEmEdicao(usuario.nome)
+    definirLoginEmEdicao(usuario.login)
+    definirErro("")
+  }
+
+  function cancelarEdicao() {
+    definirUsuarioEmEdicao(null)
+    definirNomeEmEdicao("")
+    definirLoginEmEdicao("")
+  }
+
+  async function salvarEdicao(evento: FormEvent) {
+    evento.preventDefault()
+    if (!usuarioEmEdicao) return
+    definirErro("")
+    try {
+      await requisitar<void>(`/admin/usuarios/${usuarioEmEdicao}`, {
+        method: "PATCH",
+        body: JSON.stringify({ nome: nomeEmEdicao, login: loginEmEdicao }),
+      })
+      cancelarEdicao()
+      await carregar()
+    } catch (falha) {
+      definirErro(
+        falha instanceof Error ? falha.message : "Não foi possível editar.",
+      )
+    }
+  }
+
+  async function excluirUsuario(usuario: Usuario) {
+    if (
+      !window.confirm(
+        `Excluir a conta @${usuario.login} e todos os dados dela PARA SEMPRE? Esta ação não pode ser desfeita.`,
+      )
+    ) {
+      return
+    }
+    definirErro("")
+    try {
+      await requisitar<void>(`/admin/usuarios/${usuario.id}`, {
+        method: "DELETE",
+      })
+      if (usuarioEmEdicao === usuario.id) cancelarEdicao()
+      definirCodigo("")
+      await carregar()
+    } catch (falha) {
+      definirErro(
+        falha instanceof Error ? falha.message : "Não foi possível excluir.",
       )
     }
   }
@@ -188,31 +248,102 @@ function AplicacaoAdministrativa() {
             usuarios.map((usuario) => (
               <article
                 key={usuario.id}
-                className="flex items-center gap-3 rounded-2xl bg-white p-4 shadow-sm"
+                className="rounded-2xl bg-white p-4 shadow-sm"
               >
-                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-blue-50 font-bold text-[#1A56DB]">
-                  {usuario.nome.charAt(0).toUpperCase()}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-bold">{usuario.nome}</p>
-                  <p className="truncate text-xs text-gray-500">
-                    @{usuario.login} · {usuario.status}
-                  </p>
-                </div>
-                {usuario.perfilAcesso === "usuario" &&
-                  usuario.status !== "pendente" && (
-                    <button
-                      type="button"
-                      onClick={() => alternarStatus(usuario)}
-                      className={`rounded-xl px-3 py-2 text-xs font-bold ${
-                        usuario.status === "inativo"
-                          ? "bg-blue-50 text-[#1A56DB]"
-                          : "bg-red-50 text-red-600"
-                      }`}
-                    >
-                      {usuario.status === "inativo" ? "Ativar" : "Desativar"}
-                    </button>
-                  )}
+                {usuarioEmEdicao === usuario.id ? (
+                  <form className="space-y-3" onSubmit={salvarEdicao}>
+                    <input
+                      value={nomeEmEdicao}
+                      onChange={(evento) =>
+                        definirNomeEmEdicao(evento.target.value)
+                      }
+                      placeholder="Nome"
+                      autoFocus
+                      className="h-12 w-full rounded-xl bg-gray-100 px-4 text-base outline-none focus:ring-2 focus:ring-[#1A56DB]/30"
+                    />
+                    <input
+                      value={loginEmEdicao}
+                      onChange={(evento) =>
+                        definirLoginEmEdicao(evento.target.value)
+                      }
+                      placeholder="Nome de usuário"
+                      autoCapitalize="none"
+                      className="h-12 w-full rounded-xl bg-gray-100 px-4 text-base outline-none focus:ring-2 focus:ring-[#1A56DB]/30"
+                    />
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={cancelarEdicao}
+                        className="h-11 rounded-xl bg-gray-100 text-sm font-bold text-gray-600"
+                      >
+                        Cancelar
+                      </button>
+                      <button
+                        type="submit"
+                        className="h-11 rounded-xl bg-[#1A56DB] text-sm font-bold text-white"
+                      >
+                        Salvar
+                      </button>
+                    </div>
+                  </form>
+                ) : (
+                  <div>
+                    <div className="flex items-center gap-3">
+                      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-blue-50 font-bold text-[#1A56DB]">
+                        {usuario.nome.charAt(0).toUpperCase()}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <p className="truncate text-sm font-bold">
+                            {usuario.nome}
+                          </p>
+                          {usuario.inapagavel && (
+                            <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-bold text-[#1A56DB]">
+                              Conta principal
+                            </span>
+                          )}
+                        </div>
+                        <p className="truncate text-xs text-gray-500">
+                          @{usuario.login} · {usuario.status}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="mt-3 flex flex-wrap justify-end gap-2 border-t border-gray-100 pt-3">
+                      <button
+                        type="button"
+                        onClick={() => iniciarEdicao(usuario)}
+                        className="rounded-xl bg-blue-50 px-3 py-2 text-xs font-bold text-[#1A56DB]"
+                      >
+                        Editar
+                      </button>
+                      {usuario.perfilAcesso === "usuario" &&
+                        usuario.status !== "pendente" && (
+                          <button
+                            type="button"
+                            onClick={() => alternarStatus(usuario)}
+                            className={`rounded-xl px-3 py-2 text-xs font-bold ${
+                              usuario.status === "inativo"
+                                ? "bg-blue-50 text-[#1A56DB]"
+                                : "bg-amber-50 text-amber-700"
+                            }`}
+                          >
+                            {usuario.status === "inativo"
+                              ? "Ativar"
+                              : "Desativar"}
+                          </button>
+                        )}
+                      {!usuario.inapagavel && (
+                        <button
+                          type="button"
+                          onClick={() => excluirUsuario(usuario)}
+                          className="rounded-xl bg-red-50 px-3 py-2 text-xs font-bold text-red-600"
+                        >
+                          Excluir
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
               </article>
             ))
           )}

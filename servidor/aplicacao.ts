@@ -46,6 +46,20 @@ interface SessaoValida {
   csrfToken: string
 }
 
+interface DadosDeIdentificacaoDaConta {
+  login: string
+  nome: string
+}
+
+interface UsuarioAdministravel {
+  id: string
+  login: string
+  nome: string
+  perfilAcesso: PerfilAcesso
+  status: "pendente" | "ativo" | "inativo"
+  conta_principal: number
+}
+
 function respostaDoUsuario(sessao: SessaoValida) {
   return {
     usuario: {
@@ -77,6 +91,24 @@ function validarEnvelope(valor: unknown): valor is EnvelopeDoCofre {
     validarTextoBase64(cofre.nonceChave, 256) &&
     validarTextoBase64(cofre.chaveCriptografada, 1_000)
   )
+}
+
+function lerIdentificacaoDaConta(
+  valor: unknown,
+): DadosDeIdentificacaoDaConta | null {
+  if (!valor || typeof valor !== "object") return null
+  const corpo = valor as Record<string, unknown>
+  const login =
+    typeof corpo.login === "string" ? normalizarLogin(corpo.login) : ""
+  const nome = typeof corpo.nome === "string" ? corpo.nome.trim() : ""
+  if (
+    !/^[a-z0-9._-]{3,40}$/.test(login) ||
+    nome.length < 2 ||
+    nome.length > 80
+  ) {
+    return null
+  }
+  return { login, nome }
 }
 
 function criarSessao(
@@ -478,26 +510,25 @@ export async function construirAplicacao({
 
   aplicacao.get("/api/admin/usuarios", async (requisicao, resposta) => {
     if (!exigirAdministrador(banco, requisicao, resposta)) return
+    const usuarios = banco
+      .prepare(`
+        SELECT id, login, nome, perfil AS perfilAcesso, status, conta_principal
+          FROM usuarios
+         ORDER BY conta_principal DESC, nome, login
+      `)
+      .all() as unknown as UsuarioAdministravel[]
     return resposta.send(
-      banco
-        .prepare(
-          "SELECT id, login, nome, perfil AS perfilAcesso, status FROM usuarios ORDER BY nome, login",
-        )
-        .all(),
+      usuarios.map(({ conta_principal, ...usuario }) => ({
+        ...usuario,
+        inapagavel: conta_principal === 1,
+      })),
     )
   })
 
   aplicacao.post("/api/admin/usuarios", async (requisicao, resposta) => {
     if (!exigirAdministrador(banco, requisicao, resposta, true)) return
-    const corpo = requisicao.body as { login?: unknown; nome?: unknown }
-    const login =
-      typeof corpo?.login === "string" ? normalizarLogin(corpo.login) : ""
-    const nome = typeof corpo?.nome === "string" ? corpo.nome.trim() : ""
-    if (
-      !/^[a-z0-9._-]{3,40}$/.test(login) ||
-      nome.length < 2 ||
-      nome.length > 80
-    ) {
+    const dados = lerIdentificacaoDaConta(requisicao.body)
+    if (!dados) {
       return resposta.code(400).send({ erro: "Nome ou usuário inválido." })
     }
     const codigo = gerarCodigoDeAtivacao()
@@ -512,8 +543,8 @@ export async function construirAplicacao({
         `)
         .run(
           id,
-          login,
-          nome,
+          dados.login,
+          dados.nome,
           resumirToken(codigo),
           new Date(Date.now() + 24 * 60 * 60 * 1_000).toISOString(),
           new Date().toISOString(),
@@ -521,8 +552,38 @@ export async function construirAplicacao({
     } catch {
       return resposta.code(409).send({ erro: "Este usuário já existe." })
     }
-    return resposta.code(201).send({ id, login, nome, codigoAtivacao: codigo })
+    return resposta.code(201).send({
+      id,
+      login: dados.login,
+      nome: dados.nome,
+      codigoAtivacao: codigo,
+    })
   })
+
+  aplicacao.patch<{ Params: { id: string } }>(
+    "/api/admin/usuarios/:id",
+    async (requisicao, resposta) => {
+      if (!exigirAdministrador(banco, requisicao, resposta, true)) return
+      const dados = lerIdentificacaoDaConta(requisicao.body)
+      if (!dados) {
+        return resposta.code(400).send({ erro: "Nome ou usuário inválido." })
+      }
+      const existente = banco
+        .prepare("SELECT id FROM usuarios WHERE id = ?")
+        .get(requisicao.params.id)
+      if (!existente) {
+        return resposta.code(404).send({ erro: "Conta não encontrada." })
+      }
+      try {
+        banco
+          .prepare("UPDATE usuarios SET login = ?, nome = ? WHERE id = ?")
+          .run(dados.login, dados.nome, requisicao.params.id)
+      } catch {
+        return resposta.code(409).send({ erro: "Este usuário já existe." })
+      }
+      return resposta.code(204).send()
+    },
+  )
 
   aplicacao.patch<{ Params: { id: string } }>(
     "/api/admin/usuarios/:id/status",
@@ -553,6 +614,37 @@ export async function construirAplicacao({
           .prepare("DELETE FROM sessoes WHERE usuario_id = ?")
           .run(requisicao.params.id)
       }
+      return resposta.code(204).send()
+    },
+  )
+
+  aplicacao.delete<{ Params: { id: string } }>(
+    "/api/admin/usuarios/:id",
+    async (requisicao, resposta) => {
+      const administrador = exigirAdministrador(
+        banco,
+        requisicao,
+        resposta,
+        true,
+      )
+      if (!administrador) return
+      const usuario = banco
+        .prepare("SELECT conta_principal FROM usuarios WHERE id = ?")
+        .get(requisicao.params.id) as { conta_principal: number } | undefined
+      if (!usuario) {
+        return resposta.code(404).send({ erro: "Conta não encontrada." })
+      }
+      if (usuario.conta_principal === 1) {
+        return resposta
+          .code(400)
+          .send({ erro: "A primeira conta não pode ser excluída." })
+      }
+      if (requisicao.params.id === administrador.usuarioId) {
+        return resposta
+          .code(400)
+          .send({ erro: "A conta atual não pode ser excluída." })
+      }
+      banco.prepare("DELETE FROM usuarios WHERE id = ?").run(requisicao.params.id)
       return resposta.code(204).send()
     },
   )
