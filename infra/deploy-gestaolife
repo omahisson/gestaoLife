@@ -9,6 +9,9 @@ RELEASES="$RAIZ_API/releases"
 ATUAL="$RAIZ_API/current"
 DIRETORIO_BANCO="/var/lib/gestaolife"
 VERSAO="${1:-manual}"
+CONFIG_NGINX_ORIGEM="$ORIGEM/infra/nginx-gestaolife.conf"
+CONFIG_NGINX_DESTINO="/etc/nginx/sites-available/gestaolife"
+SCRIPT_DEPLOY_NOVO="/usr/local/sbin/deploy-gestaolife.novo"
 
 case "$VERSAO" in
   *[!A-Za-z0-9._-]*) echo "Identificador de versão inválido." >&2; exit 1 ;;
@@ -28,6 +31,7 @@ validar_arquivo "$ORIGEM/dist-admin/index.html"
 validar_arquivo "$ORIGEM/build/servidor/principal.js"
 validar_arquivo "$ORIGEM/package.json"
 validar_arquivo "$ORIGEM/package-lock.json"
+validar_arquivo "$CONFIG_NGINX_ORIGEM"
 
 NODE="/usr/bin/node"
 NPM="/usr/bin/npm"
@@ -54,13 +58,24 @@ fi
 
 /usr/sbin/runuser -u gestaolife -- "$NPM" --prefix "$RELEASE" ci --omit=dev --no-audit --no-fund
 
+CONFIG_NGINX_ANTERIOR=$(/usr/bin/mktemp /etc/nginx/sites-available/gestaolife.anterior.XXXXXX)
+/usr/bin/cp --preserve=mode,ownership "$CONFIG_NGINX_DESTINO" "$CONFIG_NGINX_ANTERIOR"
+/usr/bin/install -o root -g root -m 0644 "$CONFIG_NGINX_ORIGEM" "$CONFIG_NGINX_DESTINO"
+if ! /usr/sbin/nginx -t; then
+  /usr/bin/install -o root -g root -m 0644 "$CONFIG_NGINX_ANTERIOR" "$CONFIG_NGINX_DESTINO"
+  /usr/bin/rm -f "$CONFIG_NGINX_ANTERIOR"
+  /usr/sbin/nginx -t
+  echo "A configuração nova do Nginx foi rejeitada e a anterior foi restaurada." >&2
+  exit 1
+fi
+/usr/bin/rm -f "$CONFIG_NGINX_ANTERIOR"
+
 ANTERIOR=""
 if [ -L "$ATUAL" ]; then ANTERIOR=$(/usr/bin/readlink -f "$ATUAL"); fi
 /usr/bin/ln -sfn "$RELEASE" "$RAIZ_API/current.novo"
 /usr/bin/mv -Tf "$RAIZ_API/current.novo" "$ATUAL"
 
 /usr/bin/rsync -a --delete --chown=www-data:www-data "$ORIGEM/dist/" "$DESTINO_WEB/"
-/usr/sbin/nginx -t
 /usr/bin/systemctl restart gestaolife-api
 
 TENTATIVA=1
@@ -81,4 +96,8 @@ while ! /usr/bin/curl -fsS "http://127.0.0.1:3001/api/saude" > /dev/null; do
 done
 
 /usr/bin/systemctl reload nginx
+# Atualiza o próprio comando somente após uma implantação bem-sucedida.
+/usr/bin/install -o root -g root -m 0755 "$ORIGEM/infra/deploy-gestaolife" "$SCRIPT_DEPLOY_NOVO"
+/usr/bin/mv -Tf "$SCRIPT_DEPLOY_NOVO" /usr/local/sbin/deploy-gestaolife
+
 echo "Gestão Life V1 implantado na versão $VERSAO."
