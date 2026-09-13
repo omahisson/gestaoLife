@@ -63,8 +63,8 @@ export default function TelaLogin({
       if (!login.trim() || !codigo.trim()) {
         throw new Error("Informe o usuário e o código de ativação.")
       }
-      if (senha.length < 12) {
-        throw new Error("A senha deve ter pelo menos 12 caracteres.")
+      if (senha.length < 5) {
+        throw new Error("A senha deve ter pelo menos 5 caracteres.")
       }
       if (senha !== confirmacaoSenha)
         throw new Error("As senhas não coincidem.")

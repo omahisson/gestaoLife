@@ -317,7 +317,7 @@ export async function construirAplicacao({
         typeof corpo.codigo !== "string" ||
         corpo.codigo.length > 100 ||
         typeof corpo.senha !== "string" ||
-        corpo.senha.length < 12 ||
+        corpo.senha.length < 5 ||
         corpo.senha.length > 256 ||
         !validarEnvelope(corpo.cofre)
       ) {

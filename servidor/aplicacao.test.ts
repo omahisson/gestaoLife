@@ -203,19 +203,32 @@ test("ativa uma conta pendente sem receber a frase do cofre", async () => {
   assert.equal(preparacao.statusCode, 200)
   assert.equal(preparacao.json().usuarioId, "usuario-pendente")
 
+  const cofre = {
+    saltKdf: "c2FsdA==",
+    parametrosKdf: '{"versao":1}',
+    nonceChave: "bm9uY2U=",
+    chaveCriptografada: "Y2hhdmU=",
+  }
+  const senhaCurta = await api.inject({
+    method: "POST",
+    url: "/api/ativacoes",
+    payload: {
+      login: "pendente",
+      codigo,
+      senha: "abcd",
+      cofre,
+    },
+  })
+  assert.equal(senhaCurta.statusCode, 400)
+
   const ativacao = await api.inject({
     method: "POST",
     url: "/api/ativacoes",
     payload: {
       login: "pendente",
       codigo,
-      senha: "senha-de-acesso-segura",
-      cofre: {
-        saltKdf: "c2FsdA==",
-        parametrosKdf: '{"versao":1}',
-        nonceChave: "bm9uY2U=",
-        chaveCriptografada: "Y2hhdmU=",
-      },
+      senha: "abcde",
+      cofre,
     },
   })
   assert.equal(ativacao.statusCode, 201)
