@@ -47,6 +47,12 @@ import {
   formatarMoeda,
 } from "../dominio/regras-financeiras"
 import {
+  despesaPertenceAoPadrao,
+  normalizarNome,
+  obterFrequenciaMensalDoPadrao,
+  obterTotalPrevistoNoPeriodo,
+} from "../dominio/regras-de-projecao"
+import {
   calcularTempoDecorrido,
   formatarDataIso,
   formatarDataPorExtenso,
@@ -67,18 +73,6 @@ import TelaVida from "../funcionalidades/vida/TelaVida"
 interface PropriedadesGestaoLifeApp {
   usuario: UsuarioAutenticado
   aoSair: () => void
-}
-
-function normalizarNome(nome: string) {
-  return nome.trim().toLocaleLowerCase("pt-BR")
-}
-
-function despesaPertenceAoPadrao(despesa: Despesa, padrao: DespesaPrevista) {
-  return (
-    despesa.padraoId === padrao.id ||
-    (despesa.padraoId == null &&
-      normalizarNome(despesa.nome) === normalizarNome(padrao.nome))
-  )
 }
 
 function useCampoVisivelAoAbrir(
@@ -120,19 +114,6 @@ function useCampoVisivelAoAbrir(
       elementoRaiz.style.removeProperty("--topo-area-visual")
     }
   }, [aberto, campoRef])
-}
-
-function obterTotalPrevistoNoCiclo(
-  padrao: DespesaPrevista,
-  quantidadeDiasDoCiclo: number,
-) {
-  if (padrao.recorrencia === "diaria") return quantidadeDiasDoCiclo
-  if (padrao.recorrencia === "semanal")
-    return Math.ceil(quantidadeDiasDoCiclo / 7)
-  if (padrao.recorrencia === "mensal") return 1
-  if (padrao.recorrencia === "personalizada")
-    return Math.max(padrao.ocorrenciasPorCiclo ?? padrao.restantes ?? 1, 1)
-  return 0
 }
 
 // ── Componente principal ──────────────────────────────────────────────────
@@ -278,6 +259,8 @@ export default function GestaoLifeApp({
   const [despesaNovaMeta, definirDespesaNovaMeta] = useState("")
   const [valorNovaMeta, definirValorNovaMeta] = useState("")
   const [frequenciaNovaMeta, definirFrequenciaNovaMeta] = useState("")
+  const [usarPadraoNaNovaMeta, definirUsarPadraoNaNovaMeta] = useState(true)
+  const [erroNovaMeta, definirErroNovaMeta] = useState("")
   const campoNomeNovaMetaRef = useRef<HTMLInputElement>(null)
   const campoTituloNovaNotaRef = useRef<HTMLInputElement>(null)
   const selecaoAntesDoRelogioRef = useRef<{
@@ -347,6 +330,18 @@ export default function GestaoLifeApp({
   // Insights — mês
   const mesInsightsIso = formatarMesIso(mesInsights)
   const statusPeriodo = obterStatusDoMes(mesInsights)
+  const inicioPeriodoInsightsIso =
+    statusPeriodo === "atual"
+      ? inicioCicloIso
+      : formatarDataIso(
+          new Date(mesInsights.getFullYear(), mesInsights.getMonth(), 1),
+        )
+  const fimPeriodoInsightsIso =
+    statusPeriodo === "atual"
+      ? fimCicloIso
+      : formatarDataIso(
+          new Date(mesInsights.getFullYear(), mesInsights.getMonth() + 1, 0),
+        )
 
   const gastosDoMesInsights = useMemo(
     () =>
@@ -384,9 +379,11 @@ export default function GestaoLifeApp({
         const usadas = despesasDoPeriodoInsights.filter((despesa) =>
           despesaPertenceAoPadrao(despesa, padrao),
         ).length
-        const totalPrevisto = obterTotalPrevistoNoCiclo(
+        const totalPrevisto = obterTotalPrevistoNoPeriodo(
           padrao,
-          quantidadeDiasDoCiclo,
+          inicioPeriodoInsightsIso,
+          fimPeriodoInsightsIso,
+          despesas,
         )
         const restantes = Math.max(totalPrevisto - usadas, 0)
         const ultimaDespesa = [...despesas]
@@ -414,7 +411,8 @@ export default function GestaoLifeApp({
     despesas,
     despesasDoPeriodoInsights,
     despesasPrevistas,
-    quantidadeDiasDoCiclo,
+    fimPeriodoInsightsIso,
+    inicioPeriodoInsightsIso,
   ])
 
   const projecaoDoMesInsights = useMemo(() => {
@@ -433,9 +431,11 @@ export default function GestaoLifeApp({
       quantidadeDiasDoCiclo,
     )
     const previstoRecorrente = despesasPrevistas.reduce((total, padrao) => {
-      const totalNoCiclo = obterTotalPrevistoNoCiclo(
+      const totalNoCiclo = obterTotalPrevistoNoPeriodo(
         padrao,
-        quantidadeDiasDoCiclo,
+        inicioCicloIso,
+        fimCicloIso,
+        despesas,
       )
       let ocorrenciasAteHoje = totalNoCiclo
       if (padrao.recorrencia === "diaria")
@@ -455,6 +455,9 @@ export default function GestaoLifeApp({
     return previstoRecorrente
   }, [
     despesasPrevistas,
+    despesas,
+    fimCicloIso,
+    inicioCicloIso,
     periodoFinanceiroAtual.diasDecorridos,
     quantidadeDiasDoCiclo,
     statusPeriodo,
@@ -474,9 +477,11 @@ export default function GestaoLifeApp({
       padroes: DespesaPrevista[]
     }>()
     despesasPrevistas.forEach((padrao) => {
-      const totalNoCiclo = obterTotalPrevistoNoCiclo(
+      const totalNoCiclo = obterTotalPrevistoNoPeriodo(
         padrao,
-        quantidadeDiasDoCiclo,
+        inicioCicloIso,
+        fimCicloIso,
+        despesas,
       )
       let ocorrenciasAteHoje = totalNoCiclo
       if (padrao.recorrencia === "diaria")
@@ -538,6 +543,9 @@ export default function GestaoLifeApp({
   }, [
     despesasDoPeriodoInsights,
     despesasPrevistas,
+    despesas,
+    fimCicloIso,
+    inicioCicloIso,
     periodoFinanceiroAtual.diasDecorridos,
     quantidadeDiasDoCiclo,
     statusPeriodo,
@@ -757,10 +765,11 @@ export default function GestaoLifeApp({
         normalizarNome(padrao.nome) === normalizarNome(nome),
     )
     if (nomeJaUsado) return
-    const totalPrevisto = obterTotalPrevistoNoCiclo(
+    const totalPrevisto = obterTotalPrevistoNoPeriodo(
       {
         id: identificadorPrevisaoEmEdicao,
         nome,
+        dataInicio: padraoAnterior.dataInicio,
         valor: v,
         pagamento: pagamentoPrevisaoEmEdicao,
         cartaoId:
@@ -778,7 +787,9 @@ export default function GestaoLifeApp({
             : undefined,
         restantes: 1,
       },
-      quantidadeDiasDoCiclo,
+      inicioCicloIso,
+      fimCicloIso,
+      despesas,
     )
     definirDespesasPrevistas((prev) =>
       prev.map((p) =>
@@ -849,23 +860,57 @@ export default function GestaoLifeApp({
     definirDespesaNovaMeta("")
     definirValorNovaMeta("")
     definirFrequenciaNovaMeta("")
+    definirUsarPadraoNaNovaMeta(true)
+    definirErroNovaMeta("")
     definirModalNovaMetaAberta(true)
   }
   function salvarMeta() {
     const nome = nomeNovaMeta.trim()
-    if (!nome) return
+    const padraoDaMeta = despesasPrevistas.find(
+      (padrao) =>
+        normalizarNome(padrao.nome) === normalizarNome(despesaNovaMeta),
+    )
+    const valorPersonalizado = parseFloat(valorNovaMeta.replace(",", "."))
+    const frequenciaPersonalizada = Number(frequenciaNovaMeta)
+    if (!nome) {
+      definirErroNovaMeta("Informe o nome da meta.")
+      return
+    }
+    if (impactoNovaMeta && usarPadraoNaNovaMeta && !padraoDaMeta) {
+      definirErroNovaMeta("Selecione um padrão de despesa.")
+      return
+    }
+    if (
+      impactoNovaMeta &&
+      !usarPadraoNaNovaMeta &&
+      (!despesaNovaMeta.trim() ||
+        !Number.isFinite(valorPersonalizado) ||
+        valorPersonalizado <= 0 ||
+        !Number.isInteger(frequenciaPersonalizada) ||
+        frequenciaPersonalizada <= 0)
+    ) {
+      definirErroNovaMeta(
+        "Informe a despesa, um valor maior que zero e a frequência personalizada.",
+      )
+      return
+    }
     const dataInicio = `${dataNovaMeta}T${horaNovaMeta}:00`
     const valorMedio =
-      impactoNovaMeta && valorNovaMeta
-        ? parseFloat(valorNovaMeta.replace(",", "."))
-        : undefined
+      impactoNovaMeta && usarPadraoNaNovaMeta
+        ? padraoDaMeta?.valor
+        : impactoNovaMeta
+          ? valorPersonalizado
+          : undefined
     const frequenciaMensal =
-      impactoNovaMeta && frequenciaNovaMeta
-        ? parseInt(frequenciaNovaMeta)
-        : undefined
-    const despesaVinculadaNome =
-      impactoNovaMeta && despesaNovaMeta.trim()
-        ? despesaNovaMeta.trim()
+      impactoNovaMeta && usarPadraoNaNovaMeta && padraoDaMeta
+        ? obterFrequenciaMensalDoPadrao(padraoDaMeta)
+        : impactoNovaMeta
+          ? frequenciaPersonalizada
+          : undefined
+    const despesaVinculadaNome = impactoNovaMeta
+      ? usarPadraoNaNovaMeta
+        ? padraoDaMeta?.nome
+        : despesaNovaMeta.trim()
         : undefined
     const novoMetaId = gerarProximoIdentificador()
     definirMetas((prev) => [
@@ -1188,14 +1233,26 @@ export default function GestaoLifeApp({
       ).length
       const previsaoDoPadraoFoiConcluida =
         quantidadeRegistradaNoCiclo >=
-        obterTotalPrevistoNoCiclo(prev, quantidadeDiasDoCiclo)
+        obterTotalPrevistoNoPeriodo(
+          prev,
+          inicioCicloIso,
+          fimCicloIso,
+          despesas,
+        )
       definirPadraoSelecionadoId(prev.id)
       definirRecorrencia(
         previsaoDoPadraoFoiConcluida ? "avulsa" : prev.recorrencia,
       )
       if (prev.recorrencia === "personalizada")
         definirOcorrenciasPersonalizadas(
-          String(obterTotalPrevistoNoCiclo(prev, quantidadeDiasDoCiclo)),
+          String(
+            obterTotalPrevistoNoPeriodo(
+              prev,
+              inicioCicloIso,
+              fimCicloIso,
+              despesas,
+            ),
+          ),
         )
     } else {
       definirPadraoSelecionadoId(null)
@@ -1245,10 +1302,11 @@ export default function GestaoLifeApp({
     if (recorrencia !== "avulsa" && !padraoExistente) {
       const pid = gerarProximoIdentificador()
       padraoVinculadoId = pid
-      const totalPrevisto = obterTotalPrevistoNoCiclo(
+      const totalPrevisto = obterTotalPrevistoNoPeriodo(
         {
           id: pid,
           nome: nomeFinal,
+          dataInicio: dataDespesa,
           valor: v,
           pagamento,
           cartaoId: pagamento === "cartao" ? cartaoDaDespesa?.id : undefined,
@@ -1258,13 +1316,15 @@ export default function GestaoLifeApp({
           ocorrenciasPorCiclo: occ,
           restantes: occ ?? 1,
         },
-        quantidadeDiasDoCiclo,
+        inicioCicloIso,
+        fimCicloIso,
       )
       definirDespesasPrevistas((prev) => [
         ...prev,
         {
           id: pid,
           nome: nomeFinal,
+          dataInicio: dataDespesa,
           valor: v,
           pagamento,
           cartaoId: pagamento === "cartao" ? cartaoDaDespesa?.id : undefined,
@@ -1409,14 +1469,20 @@ export default function GestaoLifeApp({
   const padraoSelecionado = despesasPrevistas.find(
     (padrao) => padrao.id === padraoSelecionadoId,
   )
+  const padraoDaNovaMeta = despesasPrevistas.find(
+    (padrao) =>
+      normalizarNome(padrao.nome) === normalizarNome(despesaNovaMeta),
+  )
   const resumoDoPadraoSelecionado = padraoSelecionado
     ? (() => {
         const despesasRegistradas = despesasDoCicloAtual.filter((despesa) =>
           despesaPertenceAoPadrao(despesa, padraoSelecionado),
         )
-        const totalPrevisto = obterTotalPrevistoNoCiclo(
+        const totalPrevisto = obterTotalPrevistoNoPeriodo(
           padraoSelecionado,
-          quantidadeDiasDoCiclo,
+          inicioCicloIso,
+          fimCicloIso,
+          despesas,
         )
         const previsaoDoCiclo = padraoSelecionado.valor * totalPrevisto
         const gastoNoCiclo = despesasRegistradas.reduce(
@@ -2777,31 +2843,63 @@ export default function GestaoLifeApp({
                   </button>
                   {impactoNovaMeta && (
                     <div className="border-t border-gray-100 p-4 space-y-3">
-                      <div className="bg-gray-100 rounded-xl px-3 py-2.5">
-                        <p className="text-[11px] text-gray-700 font-semibold mb-1">
-                          Despesa vinculada
-                        </p>
+                      <label className="flex cursor-pointer items-center gap-3 rounded-xl bg-blue-50 px-3 py-3 text-sm font-semibold text-gray-800">
                         <input
-                          type="text"
-                          value={despesaNovaMeta}
+                          type="checkbox"
+                          checked={usarPadraoNaNovaMeta}
                           onChange={(e) => {
-                            definirDespesaNovaMeta(e.target.value)
-                            // auto-fill valor médio from despesas history
-                            const ref = despesas.filter(
-                              (d) =>
-                                d.nome.toLowerCase() ===
-                                e.target.value.toLowerCase(),
-                            )
-                            if (ref.length > 0) {
-                              const avg =
-                                ref.reduce((a, d) => a + d.valor, 0) /
-                                ref.length
-                              definirValorNovaMeta(avg.toFixed(2))
+                            const usarPadrao = e.target.checked
+                            definirUsarPadraoNaNovaMeta(usarPadrao)
+                            definirErroNovaMeta("")
+                            if (!usarPadrao && padraoDaNovaMeta) {
+                              definirValorNovaMeta(String(padraoDaNovaMeta.valor))
+                              definirFrequenciaNovaMeta(
+                                String(
+                                  obterFrequenciaMensalDoPadrao(
+                                    padraoDaNovaMeta,
+                                  ),
+                                ),
+                              )
                             }
                           }}
-                          placeholder="Nome da despesa (ex: Cerveja)"
-                          className="w-full bg-transparent text-sm font-medium outline-none text-gray-900 placeholder:text-gray-500"
+                          className="h-4 w-4 accent-[#1A56DB]"
                         />
+                        Usar valor e frequência do padrão
+                      </label>
+                      <div className="bg-gray-100 rounded-xl px-3 py-2.5">
+                        <p className="text-[11px] text-gray-700 font-semibold mb-1">
+                          {usarPadraoNaNovaMeta
+                            ? "Padrão vinculado"
+                            : "Despesa vinculada"}
+                        </p>
+                        {usarPadraoNaNovaMeta ? (
+                          <select
+                            value={padraoDaNovaMeta?.nome ?? ""}
+                            onChange={(e) => {
+                              definirDespesaNovaMeta(e.target.value)
+                              definirErroNovaMeta("")
+                            }}
+                            className="w-full bg-transparent text-sm font-medium outline-none text-gray-900"
+                          >
+                            <option value="">Selecione um padrão</option>
+                            {despesasPrevistas.map((padrao) => (
+                              <option key={padrao.id} value={padrao.nome}>
+                                {padrao.nome}
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          <input
+                            type="text"
+                            value={despesaNovaMeta}
+                            onChange={(e) => {
+                              definirDespesaNovaMeta(e.target.value)
+                              definirErroNovaMeta("")
+                            }}
+                            placeholder="Nome da despesa (ex: Cerveja)"
+                            className="w-full bg-transparent text-sm font-medium outline-none text-gray-900 placeholder:text-gray-500"
+                          />
+                        )}
                       </div>
                       <div className="flex gap-2">
                         <div className="flex-1 bg-gray-100 rounded-xl px-3 py-2.5">
@@ -2811,12 +2909,18 @@ export default function GestaoLifeApp({
                           <input
                             type="number"
                             inputMode="decimal"
-                            value={valorNovaMeta}
-                            onChange={(e) =>
-                              definirValorNovaMeta(e.target.value)
+                            value={
+                              usarPadraoNaNovaMeta
+                                ? (padraoDaNovaMeta?.valor ?? "")
+                                : valorNovaMeta
                             }
+                            readOnly={usarPadraoNaNovaMeta}
+                            onChange={(e) => {
+                              definirValorNovaMeta(e.target.value)
+                              definirErroNovaMeta("")
+                            }}
                             placeholder="0,00"
-                            className="w-full bg-transparent text-sm font-medium outline-none text-gray-900 placeholder:text-gray-500"
+                            className={`w-full bg-transparent text-sm font-medium outline-none placeholder:text-gray-500 ${usarPadraoNaNovaMeta ? "text-gray-500" : "text-gray-900"}`}
                           />
                         </div>
                         <div className="flex-1 bg-gray-100 rounded-xl px-3 py-2.5">
@@ -2826,18 +2930,32 @@ export default function GestaoLifeApp({
                           <input
                             type="number"
                             inputMode="numeric"
-                            value={frequenciaNovaMeta}
-                            onChange={(e) =>
-                              definirFrequenciaNovaMeta(e.target.value)
+                            value={
+                              usarPadraoNaNovaMeta && padraoDaNovaMeta
+                                ? obterFrequenciaMensalDoPadrao(
+                                    padraoDaNovaMeta,
+                                  )
+                                : frequenciaNovaMeta
                             }
+                            readOnly={usarPadraoNaNovaMeta}
+                            onChange={(e) => {
+                              definirFrequenciaNovaMeta(e.target.value)
+                              definirErroNovaMeta("")
+                            }}
                             placeholder="0"
-                            className="w-full bg-transparent text-sm font-medium outline-none text-gray-900 placeholder:text-gray-500"
+                            className={`w-full bg-transparent text-sm font-medium outline-none placeholder:text-gray-500 ${usarPadraoNaNovaMeta ? "text-gray-500" : "text-gray-900"}`}
                           />
                         </div>
                       </div>
                     </div>
                   )}
                 </div>
+
+                {erroNovaMeta && (
+                  <p role="alert" className="px-1 text-xs font-medium text-red-600">
+                    {erroNovaMeta}
+                  </p>
+                )}
 
                 <button
                   onClick={salvarMeta}
@@ -3242,9 +3360,11 @@ export default function GestaoLifeApp({
                           if (padraoSelecionado.recorrencia === "personalizada")
                             definirOcorrenciasPersonalizadas(
                               String(
-                                obterTotalPrevistoNoCiclo(
+                                obterTotalPrevistoNoPeriodo(
                                   padraoSelecionado,
-                                  quantidadeDiasDoCiclo,
+                                  inicioCicloIso,
+                                  fimCicloIso,
+                                  despesas,
                                 ),
                               ),
                             )
@@ -4005,19 +4125,26 @@ export default function GestaoLifeApp({
                               parseInt(ocorrenciasPersonalizadasPrevisao) || 1,
                               1,
                             )
-                            const occ =
-                              recorrenciaPrevisaoEmEdicao === "diaria"
-                                ? quantidadeDiasDoCiclo
-                                : recorrenciaPrevisaoEmEdicao === "semanal"
-                                  ? Math.ceil(quantidadeDiasDoCiclo / 7)
-                                  : recorrenciaPrevisaoEmEdicao === "mensal"
-                                    ? 1
-                                    : recorrenciaPrevisaoEmEdicao ===
-                                        "personalizada"
-                                      ? customOcc
-                                      : 0
                             const padraoAtual = despesasPrevistas.find(
                               (padrao) => padrao.id === g.id,
+                            )
+                            const occ = obterTotalPrevistoNoPeriodo(
+                              {
+                                id: g.id,
+                                nome: nomePrevisaoEmEdicao,
+                                dataInicio: padraoAtual?.dataInicio,
+                                valor: v,
+                                recorrencia: recorrenciaPrevisaoEmEdicao,
+                                ocorrenciasPorCiclo:
+                                  recorrenciaPrevisaoEmEdicao ===
+                                  "personalizada"
+                                    ? customOcc
+                                    : undefined,
+                                restantes: customOcc,
+                              },
+                              inicioCicloIso,
+                              fimCicloIso,
+                              despesas,
                             )
                             const usadasNoPadraoEditado =
                               despesasDoPeriodoInsights.filter((despesa) =>

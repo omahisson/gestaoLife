@@ -70,6 +70,8 @@ export interface DespesaPrevista {
   id: number
   nome: string
   valor: number
+  /** Data da primeira ocorrência, usada como âncora da recorrência. */
+  dataInicio?: string
   pagamento?: TipoPagamento
   cartaoId?: number
   cartaoNome?: string

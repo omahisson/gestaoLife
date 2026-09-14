@@ -14,7 +14,7 @@
     "build:api": "node scripts/limpar-build.mjs && tsc -p tsconfig.servidor.json",
     "verify:bundles": "tsx servidor/comandos/verificar-bundles.ts",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.servidor.json --noEmit && tsc -p tsconfig.admin.json --noEmit",
-    "test": "node --test --import tsx servidor/aplicacao.test.ts src/seguranca/cofre.test.ts",
+    "test": "node --test --import tsx servidor/aplicacao.test.ts src/seguranca/cofre.test.ts src/dominio/regras-de-projecao.test.ts",
     "check": "npm run typecheck && npm run test && npm run build",
     "conta:administrador": "tsx servidor/comandos/criar-administrador.ts",
     "preview": "vite preview",
