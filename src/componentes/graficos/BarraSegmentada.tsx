@@ -1,16 +1,19 @@
 export const COR_UTILIZADA = "#FB923C"
+export const COR_NAO_UTILIZADA = "#CBD5E1"
 export const COR_RESTANTE = "#C2D9EE"
 
 interface PropriedadesBarraSegmentada {
   utilizadas: number
+  naoUtilizadas?: number
   restantes: number
 }
 
 export default function BarraSegmentada({
   utilizadas,
+  naoUtilizadas = 0,
   restantes,
 }: PropriedadesBarraSegmentada) {
-  const total = utilizadas + restantes
+  const total = utilizadas + naoUtilizadas + restantes
   if (total === 0) return null
 
   const quantidadeMaximaDeSegmentos = 28
@@ -26,6 +29,10 @@ export default function BarraSegmentada({
     Math.round(restantes * fatorDeReducao),
     restantes > 0 ? 1 : 0,
   )
+  const segmentosNaoUtilizados = Math.max(
+    Math.round(naoUtilizadas * fatorDeReducao),
+    naoUtilizadas > 0 ? 1 : 0,
+  )
 
   return (
     <div className="flex gap-[2.5px]">
@@ -34,6 +41,13 @@ export default function BarraSegmentada({
           key={`utilizada-${indice}`}
           className="h-3 flex-1 rounded-[3px]"
           style={{ backgroundColor: COR_UTILIZADA, minWidth: 0 }}
+        />
+      ))}
+      {Array.from({ length: segmentosNaoUtilizados }).map((_, indice) => (
+        <div
+          key={`nao-utilizada-${indice}`}
+          className="h-3 flex-1 rounded-[3px]"
+          style={{ backgroundColor: COR_NAO_UTILIZADA, minWidth: 0 }}
         />
       ))}
       {Array.from({ length: segmentosRestantes }).map((_, indice) => (

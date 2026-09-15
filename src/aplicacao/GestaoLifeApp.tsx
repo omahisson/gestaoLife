@@ -5,6 +5,7 @@ import useDadosDoUsuario from "../compartilhado/ganchos/useDadosDoUsuario"
 import useGeradorDeIdentificador from "../compartilhado/ganchos/useGeradorDeIdentificador"
 import IconePagamento from "../componentes/IconePagamento"
 import BarraSegmentada, {
+  COR_NAO_UTILIZADA,
   COR_RESTANTE,
   COR_UTILIZADA,
 } from "../componentes/graficos/BarraSegmentada"
@@ -47,6 +48,7 @@ import {
   formatarMoeda,
 } from "../dominio/regras-financeiras"
 import {
+  calcularDistribuicaoDasOcorrencias,
   despesaPertenceAoPadrao,
   normalizarNome,
   obterFrequenciaMensalDoPadrao,
@@ -342,6 +344,23 @@ export default function GestaoLifeApp({
       : formatarDataIso(
           new Date(mesInsights.getFullYear(), mesInsights.getMonth() + 1, 0),
         )
+  const quantidadeDiasDoPeriodoInsights =
+    statusPeriodo === "atual"
+      ? quantidadeDiasDoCiclo
+      : new Date(
+          mesInsights.getFullYear(),
+          mesInsights.getMonth() + 1,
+          0,
+        ).getDate()
+  const diasDecorridosNoPeriodoInsights =
+    statusPeriodo === "atual"
+      ? Math.min(
+          periodoFinanceiroAtual.diasDecorridos,
+          quantidadeDiasDoPeriodoInsights,
+        )
+      : statusPeriodo === "passado"
+        ? quantidadeDiasDoPeriodoInsights
+        : 0
 
   const gastosDoMesInsights = useMemo(
     () =>
@@ -385,7 +404,13 @@ export default function GestaoLifeApp({
           fimPeriodoInsightsIso,
           despesas,
         )
-        const restantes = Math.max(totalPrevisto - usadas, 0)
+        const distribuicao = calcularDistribuicaoDasOcorrencias({
+          recorrencia: padrao.recorrencia,
+          totalPrevisto,
+          quantidadeRegistrada: usadas,
+          diasDecorridos: diasDecorridosNoPeriodoInsights,
+          quantidadeDiasDoPeriodo: quantidadeDiasDoPeriodoInsights,
+        })
         const ultimaDespesa = [...despesas]
           .filter((despesa) => despesaPertenceAoPadrao(despesa, padrao))
           .sort(
@@ -401,9 +426,12 @@ export default function GestaoLifeApp({
           cartaoNome: padrao.cartaoNome ?? ultimaDespesa?.cartaoNome,
           recorrencia: padrao.recorrencia,
           totalPrevisto,
-          usadas,
-          restantes,
-          projecaoValor: padrao.valor * restantes,
+          usadas: distribuicao.gastas,
+          naoGastas: distribuicao.naoGastas,
+          restantes: distribuicao.restantes,
+          disponiveis: distribuicao.disponiveis,
+          excedentes: distribuicao.excedentes,
+          projecaoValor: padrao.valor * distribuicao.disponiveis,
         }
       })
       .sort((a, b) => b.projecaoValor - a.projecaoValor)
@@ -413,6 +441,8 @@ export default function GestaoLifeApp({
     despesasPrevistas,
     fimPeriodoInsightsIso,
     inicioPeriodoInsightsIso,
+    diasDecorridosNoPeriodoInsights,
+    quantidadeDiasDoPeriodoInsights,
   ])
 
   const projecaoDoMesInsights = useMemo(() => {
@@ -2901,52 +2931,42 @@ export default function GestaoLifeApp({
                           />
                         )}
                       </div>
-                      <div className="flex gap-2">
-                        <div className="flex-1 bg-gray-100 rounded-xl px-3 py-2.5">
-                          <p className="text-[11px] text-gray-700 font-semibold mb-1">
-                            Valor médio (R$)
-                          </p>
-                          <input
-                            type="number"
-                            inputMode="decimal"
-                            value={
-                              usarPadraoNaNovaMeta
-                                ? (padraoDaNovaMeta?.valor ?? "")
-                                : valorNovaMeta
-                            }
-                            readOnly={usarPadraoNaNovaMeta}
-                            onChange={(e) => {
-                              definirValorNovaMeta(e.target.value)
-                              definirErroNovaMeta("")
-                            }}
-                            placeholder="0,00"
-                            className={`w-full bg-transparent text-sm font-medium outline-none placeholder:text-gray-500 ${usarPadraoNaNovaMeta ? "text-gray-500" : "text-gray-900"}`}
-                          />
+                      {!usarPadraoNaNovaMeta && (
+                        <div className="flex gap-2">
+                          <div className="flex-1 bg-gray-100 rounded-xl px-3 py-2.5">
+                            <p className="text-[11px] text-gray-700 font-semibold mb-1">
+                              Valor médio (R$)
+                            </p>
+                            <input
+                              type="number"
+                              inputMode="decimal"
+                              value={valorNovaMeta}
+                              onChange={(e) => {
+                                definirValorNovaMeta(e.target.value)
+                                definirErroNovaMeta("")
+                              }}
+                              placeholder="0,00"
+                              className="w-full bg-transparent text-sm font-medium text-gray-900 outline-none placeholder:text-gray-500"
+                            />
+                          </div>
+                          <div className="flex-1 bg-gray-100 rounded-xl px-3 py-2.5">
+                            <p className="text-[11px] text-gray-700 font-semibold mb-1">
+                              Frequência (×/mês)
+                            </p>
+                            <input
+                              type="number"
+                              inputMode="numeric"
+                              value={frequenciaNovaMeta}
+                              onChange={(e) => {
+                                definirFrequenciaNovaMeta(e.target.value)
+                                definirErroNovaMeta("")
+                              }}
+                              placeholder="0"
+                              className="w-full bg-transparent text-sm font-medium text-gray-900 outline-none placeholder:text-gray-500"
+                            />
+                          </div>
                         </div>
-                        <div className="flex-1 bg-gray-100 rounded-xl px-3 py-2.5">
-                          <p className="text-[11px] text-gray-700 font-semibold mb-1">
-                            Frequência (×/mês)
-                          </p>
-                          <input
-                            type="number"
-                            inputMode="numeric"
-                            value={
-                              usarPadraoNaNovaMeta && padraoDaNovaMeta
-                                ? obterFrequenciaMensalDoPadrao(
-                                    padraoDaNovaMeta,
-                                  )
-                                : frequenciaNovaMeta
-                            }
-                            readOnly={usarPadraoNaNovaMeta}
-                            onChange={(e) => {
-                              definirFrequenciaNovaMeta(e.target.value)
-                              definirErroNovaMeta("")
-                            }}
-                            placeholder="0"
-                            className={`w-full bg-transparent text-sm font-medium outline-none placeholder:text-gray-500 ${usarPadraoNaNovaMeta ? "text-gray-500" : "text-gray-900"}`}
-                          />
-                        </div>
-                      </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -4020,14 +4040,23 @@ export default function GestaoLifeApp({
                   </div>
                   <div className="w-8" />
                 </div>
-                <div className="flex items-center gap-4 mb-3 mt-3 px-1">
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mb-3 mt-3 px-1">
                   <div className="flex items-center gap-1.5">
                     <div
                       className="w-4 h-3 rounded-[3px]"
                       style={{ backgroundColor: COR_UTILIZADA }}
                     />
                     <span className="text-xs text-gray-500 font-medium">
-                      Já ocorreu
+                      Gasto
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <div
+                      className="w-4 h-3 rounded-[3px]"
+                      style={{ backgroundColor: COR_NAO_UTILIZADA }}
+                    />
+                    <span className="text-xs text-gray-500 font-medium">
+                      Não gasto
                     </span>
                   </div>
                   <div className="flex items-center gap-1.5">
@@ -4036,7 +4065,7 @@ export default function GestaoLifeApp({
                       style={{ backgroundColor: COR_RESTANTE }}
                     />
                     <span className="text-xs text-gray-500 font-medium">
-                      Previsto
+                      Restante
                     </span>
                   </div>
                   <p className="ml-auto text-[10px] text-gray-600">
@@ -4365,7 +4394,7 @@ export default function GestaoLifeApp({
                                 </p>
                               </div>
                               <div className="flex items-center gap-1.5 shrink-0 ml-3">
-                                {g.restantes > 0 && (
+                                {g.disponiveis > 0 && (
                                   <div className="text-right">
                                     <p className="text-sm font-bold text-gray-900">
                                       {formatarMoeda(g.projecaoValor)}
@@ -4394,17 +4423,21 @@ export default function GestaoLifeApp({
                             <div className="mt-3">
                               <BarraSegmentada
                                 utilizadas={g.usadas}
+                                naoUtilizadas={g.naoGastas}
                                 restantes={g.restantes}
                               />
-                              <div className="flex justify-between mt-1.5">
+                              <div className="mt-1.5 grid grid-cols-2 gap-x-3 gap-y-1">
                                 <span
                                   className="text-[10px] font-semibold"
                                   style={{ color: COR_UTILIZADA }}
                                 >
-                                  {g.usadas}x já ocorreu
+                                  {g.usadas}x gasto{g.usadas !== 1 ? "s" : ""}
                                 </span>
-                                <span className="text-[10px] font-semibold text-gray-600">
-                                  {g.totalPrevisto} total
+                                <span
+                                  className="text-right text-[10px] font-semibold"
+                                  style={{ color: COR_NAO_UTILIZADA }}
+                                >
+                                  {g.naoGastas}x não gasto
                                 </span>
                                 <span
                                   className="text-[10px] font-semibold"
@@ -4412,6 +4445,12 @@ export default function GestaoLifeApp({
                                 >
                                   {g.restantes}x restante
                                   {g.restantes !== 1 ? "s" : ""}
+                                </span>
+                                <span className="text-right text-[10px] font-semibold text-gray-600">
+                                  {g.totalPrevisto} total
+                                  {g.excedentes > 0
+                                    ? ` · ${g.excedentes} extra${g.excedentes !== 1 ? "s" : ""}`
+                                    : ""}
                                 </span>
                               </div>
                             </div>

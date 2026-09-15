@@ -51,36 +51,52 @@ export function obterTotalPrevistoNoPeriodo(
   if (padrao.recorrencia === "personalizada")
     return Math.max(padrao.ocorrenciasPorCiclo ?? padrao.restantes ?? 1, 1)
   if (padrao.recorrencia === "mensal") return 1
-
-  if (padrao.recorrencia === "diaria") {
-    const primeiraOcorrencia =
-      dataInicial > inicioPeriodo ? dataInicial : inicioPeriodo
-    return (
-      Math.floor(
-        (fimPeriodo.getTime() - primeiraOcorrencia.getTime()) /
-          MILISSEGUNDOS_POR_DIA,
-      ) + 1
-    )
-  }
-
-  const intervaloSemanal = 7 * MILISSEGUNDOS_POR_DIA
-  let primeiraOcorrencia = dataInicial
-  if (primeiraOcorrencia < inicioPeriodo) {
-    const intervalosAteOPeriodo = Math.ceil(
-      (inicioPeriodo.getTime() - primeiraOcorrencia.getTime()) /
-        intervaloSemanal,
-    )
-    primeiraOcorrencia = new Date(
-      primeiraOcorrencia.getTime() + intervalosAteOPeriodo * intervaloSemanal,
-    )
-  }
-
-  if (primeiraOcorrencia > fimPeriodo) return 0
-  return (
+  const quantidadeDias =
     Math.floor(
-      (fimPeriodo.getTime() - primeiraOcorrencia.getTime()) / intervaloSemanal,
+      (fimPeriodo.getTime() - inicioPeriodo.getTime()) / MILISSEGUNDOS_POR_DIA,
     ) + 1
-  )
+  if (padrao.recorrencia === "diaria") return quantidadeDias
+  return Math.ceil(quantidadeDias / 7)
+}
+
+export function calcularDistribuicaoDasOcorrencias({
+  recorrencia,
+  totalPrevisto,
+  quantidadeRegistrada,
+  diasDecorridos,
+  quantidadeDiasDoPeriodo,
+}: {
+  recorrencia: DespesaPrevista["recorrencia"]
+  totalPrevisto: number
+  quantidadeRegistrada: number
+  diasDecorridos: number
+  quantidadeDiasDoPeriodo: number
+}) {
+  const total = Math.max(totalPrevisto, 0)
+  const diasNoPeriodo = Math.max(quantidadeDiasDoPeriodo, 1)
+  const diasPassados = Math.min(Math.max(diasDecorridos, 0), diasNoPeriodo)
+  let decorridas = total
+
+  if (recorrencia === "diaria") decorridas = Math.min(total, diasPassados)
+  else if (recorrencia === "semanal")
+    decorridas = Math.min(total, Math.ceil(diasPassados / 7))
+  else if (recorrencia === "mensal" || recorrencia === "personalizada")
+    decorridas = Math.min(
+      total,
+      Math.ceil((total * diasPassados) / diasNoPeriodo),
+    )
+
+  const gastas = Math.min(Math.max(quantidadeRegistrada, 0), total)
+  const naoGastas = Math.max(decorridas - gastas, 0)
+  const restantes = Math.max(total - gastas - naoGastas, 0)
+
+  return {
+    gastas,
+    naoGastas,
+    restantes,
+    disponiveis: Math.max(total - gastas, 0),
+    excedentes: Math.max(quantidadeRegistrada - total, 0),
+  }
 }
 
 export function obterFrequenciaMensalDoPadrao(padrao: DespesaPrevista) {
