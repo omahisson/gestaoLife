@@ -37,6 +37,12 @@ Depois da preparação única, cada commit recebido pelo Jenkins executa:
 
 O banco permanece em `/var/lib/gestaolife/gestao-life.sqlite`. O processo não exige acesso manual à VPS e não cria cópias de segurança.
 
+## Serviço da Extensão Puxadora
+
+O Nginx reserva o prefixo `/extensao-puxadora/` para um serviço independente em `127.0.0.1:4000`. O serviço, suas releases e seus relatórios são implantados pelo repositório `extensaoPuxadora`; eles não ficam em `/opt/gestaolife`, `/var/lib/gestaolife` ou `/var/www/gestaolife`.
+
+Consulte `docs/IMPLANTACAO-JENKINS.md` no repositório da extensão para a preparação única. A extensão mantém temporariamente sua chave no código e preserva o formato dos relatórios já consumidos por outros projetos.
+
 ## Novas pessoas
 
 Na conta administrativa, abra o perfil e mantenha pressionado por três segundos o círculo decorativo do lado direito do cartão azul. Cadastre nome e usuário, copie o código mostrado uma vez e entregue-o à pessoa. Cada conta cria a própria chave e recebe blocos separados no banco.
