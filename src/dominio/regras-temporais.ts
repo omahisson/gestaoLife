@@ -65,7 +65,9 @@ export function formatarTempoDecorrido(tempo: TempoDecorrido): string {
 }
 
 export function formatarDataPorExtenso(dataTexto: string): string {
-  const data = new Date(dataTexto)
+  const data = /^\d{4}-\d{2}-\d{2}$/.test(dataTexto)
+    ? new Date(`${dataTexto}T12:00:00`)
+    : new Date(dataTexto)
   return `${String(data.getDate()).padStart(2, "0")} de ${MESES_POR_EXTENSO[data.getMonth()]} de ${data.getFullYear()}`
 }
 

@@ -28,7 +28,7 @@ interface PropriedadesTelaInsights {
   gastosDoMes: number
   gastoRealComparativo: number
   projecaoDoMes: number
-  previsaoAteHoje: number
+  previsaoDoPeriodo: number
   diferencaPrevisao: number | null
   semana: Date
   diasDaSemana: Date[]
@@ -55,7 +55,7 @@ export default function TelaInsights({
   gastosDoMes,
   gastoRealComparativo,
   projecaoDoMes,
-  previsaoAteHoje,
+  previsaoDoPeriodo,
   diferencaPrevisao,
   semana,
   diasDaSemana,
@@ -189,10 +189,12 @@ export default function TelaInsights({
             <div className="grid grid-cols-2 gap-3 mb-3">
               <div>
                 <p className="text-[10px] text-gray-600 font-medium mb-0.5">
-                  Previsão até hoje
+                  {statusPeriodo === "atual"
+                    ? "Previsão até hoje"
+                    : "Previsão do período"}
                 </p>
                 <p className="text-base font-bold text-gray-900">
-                  {formatarMoeda(previsaoAteHoje)}
+                  {formatarMoeda(previsaoDoPeriodo)}
                 </p>
               </div>
               <div>

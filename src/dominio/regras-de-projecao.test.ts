@@ -4,6 +4,7 @@ import test from "node:test"
 import type { Despesa, DespesaPrevista } from "./modelos"
 import {
   calcularDistribuicaoDoPadrao,
+  despesaPertenceAoPadrao,
   obterOcorrenciaParaNovaDespesa,
   obterOcorrenciasPrevistasNoPeriodo,
   obterTotalPrevistoNoPeriodo,
@@ -45,6 +46,34 @@ function distribuir(despesas: Despesa[], padrao = padraoSemanal) {
     dataReferenciaIso: "2026-09-23",
   })
 }
+
+test("padrões com o mesmo nome respeitam o corte da exclusão", () => {
+  const antigo: DespesaPrevista = {
+    ...padraoSemanal,
+    id: 1,
+    vigenteDesde: "2026-09-01",
+    vigenteAte: "2026-09-10",
+    excluidoEm: "2026-09-10",
+  }
+  const novo: DespesaPrevista = {
+    ...padraoSemanal,
+    id: 2,
+    vigenteDesde: "2026-09-11",
+  }
+  const anterior: Despesa = {
+    ...criarDespesa(1, "2026-09-05"),
+    padraoId: undefined,
+  }
+  const posterior: Despesa = {
+    ...criarDespesa(2, "2026-09-12"),
+    padraoId: undefined,
+  }
+
+  assert.equal(despesaPertenceAoPadrao(anterior, antigo), true)
+  assert.equal(despesaPertenceAoPadrao(anterior, novo), false)
+  assert.equal(despesaPertenceAoPadrao(posterior, antigo), false)
+  assert.equal(despesaPertenceAoPadrao(posterior, novo), true)
+})
 
 test("padrão semanal cobre o ciclo inteiro mesmo quando foi criado no meio", () => {
   assert.equal(

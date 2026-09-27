@@ -20,7 +20,9 @@ export function despesaPertenceAoPadrao(
   return (
     despesa.padraoId === padrao.id ||
     (despesa.padraoId == null &&
-      normalizarNome(despesa.nome) === normalizarNome(padrao.nome))
+      normalizarNome(despesa.nome) === normalizarNome(padrao.nome) &&
+      (!padrao.vigenteDesde || despesa.data >= padrao.vigenteDesde) &&
+      (!padrao.vigenteAte || despesa.data <= padrao.vigenteAte))
   )
 }
 

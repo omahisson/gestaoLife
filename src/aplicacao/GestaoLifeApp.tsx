@@ -501,9 +501,8 @@ export default function GestaoLifeApp({
     )
   }, [gastosDoPeriodoInsights, gruposProjecao, statusPeriodo])
 
-  // Previsão proporcional até hoje (baseada nos padrões do ciclo).
-  const previsaoAteHoje = useMemo(() => {
-    if (statusPeriodo !== "atual") return 0
+  // Previsão proporcional do ciclo atual, usada também no card da tela inicial.
+  const previsaoAtualAteHoje = useMemo(() => {
     const previstoRecorrente = despesasPrevistas.reduce((total, padrao) => {
       const ocorrenciasAteHoje = obterOcorrenciasPrevistasNoPeriodo(
         padrao,
@@ -515,11 +514,33 @@ export default function GestaoLifeApp({
       return total + padrao.valor * ocorrenciasAteHoje
     }, 0)
     return previstoRecorrente
-  }, [despesasPrevistas, despesas, fimCicloIso, inicioCicloIso, statusPeriodo])
+  }, [despesasPrevistas, fimCicloIso, inicioCicloIso])
+
+  const previsaoDoPeriodoComparativo = useMemo(() => {
+    if (statusPeriodo === "futuro") return 0
+    if (statusPeriodo === "atual") return previsaoAtualAteHoje
+    return despesasPrevistas.reduce(
+      (total, padrao) =>
+        total +
+        padrao.valor *
+          obterOcorrenciasPrevistasNoPeriodo(
+            padrao,
+            inicioPeriodoInsightsIso,
+            fimPeriodoInsightsIso,
+          ).length,
+      0,
+    )
+  }, [
+    despesasPrevistas,
+    fimPeriodoInsightsIso,
+    inicioPeriodoInsightsIso,
+    previsaoAtualAteHoje,
+    statusPeriodo,
+  ])
 
   // Comparativo previsão vs realidade por categoria
   const comparativoItens = useMemo(() => {
-    if (statusPeriodo !== "atual") return []
+    if (statusPeriodo === "futuro") return []
     const categorias = new Map<string, {
       nome: string
       previsto: number
@@ -529,10 +550,12 @@ export default function GestaoLifeApp({
     despesasPrevistas.forEach((padrao) => {
       const ocorrenciasAteHoje = obterOcorrenciasPrevistasNoPeriodo(
         padrao,
-        inicioCicloIso,
-        fimCicloIso,
+        inicioPeriodoInsightsIso,
+        fimPeriodoInsightsIso,
       ).filter(
-        (ocorrencia) => ocorrencia.inicio <= formatarDataIso(HOJE),
+        (ocorrencia) =>
+          statusPeriodo === "passado" ||
+          ocorrencia.inicio <= formatarDataIso(HOJE),
       ).length
       const chave = normalizarNome(padrao.nome)
       const categoria = categorias.get(chave) ?? {
@@ -582,14 +605,25 @@ export default function GestaoLifeApp({
     despesasDoPeriodoInsights,
     despesasPrevistas,
     despesas,
-    fimCicloIso,
-    inicioCicloIso,
+    fimPeriodoInsightsIso,
+    inicioPeriodoInsightsIso,
     statusPeriodo,
   ])
 
   const gastoRealComparativo = useMemo(
     () => comparativoItens.reduce((total, item) => total + item.real, 0),
     [comparativoItens],
+  )
+  const gastoRealAtualComparativo = useMemo(
+    () =>
+      despesasDoCicloAtual
+        .filter((despesa) =>
+          despesasPrevistas.some((padrao) =>
+            despesaPertenceAoPadrao(despesa, padrao),
+          ),
+        )
+        .reduce((total, despesa) => total + despesa.valor, 0),
+    [despesasDoCicloAtual, despesasPrevistas],
   )
 
   // Insights — semana
@@ -1266,12 +1300,33 @@ export default function GestaoLifeApp({
     const termo = normalizarNome(valor)
     const vistos = new Set<string>()
     const nomes: string[] = []
+    const padroesAtivos = despesasPrevistas.filter(
+      (padrao) =>
+        !padrao.excluidoEm && padraoEstaVigenteEm(padrao, dataDespesa),
+    )
+    const nomesDePadroesAtivos = new Set(
+      padroesAtivos.map((padrao) => normalizarNome(padrao.nome)),
+    )
+    const nomesDePadroesExcluidos = new Set(
+      despesasPrevistas
+        .filter((padrao) => padrao.excluidoEm)
+        .map((padrao) => normalizarNome(padrao.nome)),
+    )
+    const nomeEstaBloqueado = (nome: string) => {
+      const chave = normalizarNome(nome)
+      return (
+        nomesDePadroesExcluidos.has(chave) &&
+        !nomesDePadroesAtivos.has(chave)
+      )
+    }
     const despesasRecentes = [...despesas].sort(
       (a, b) => b.data.localeCompare(a.data) || Number(b.id) - Number(a.id),
     )
     ;[
-      ...despesasRecentes.map((despesa) => despesa.nome),
-      ...despesasPrevistas.map((padrao) => padrao.nome),
+      ...despesasRecentes
+        .filter((despesa) => !nomeEstaBloqueado(despesa.nome))
+        .map((despesa) => despesa.nome),
+      ...padroesAtivos.map((padrao) => padrao.nome),
     ].forEach((nome) => {
       const chave = normalizarNome(nome)
       if (!chave || vistos.has(chave)) return
@@ -1399,21 +1454,42 @@ export default function GestaoLifeApp({
     )
     const inicioDoCicloDaDespesa = formatarDataIso(periodoDaDespesa.inicio)
     const fimDoCicloDaDespesa = formatarDataIso(periodoDaDespesa.fim)
+    const ultimaExclusaoDoNome = despesasPrevistas
+      .filter(
+        (padrao) =>
+          normalizarNome(padrao.nome) === normalizarNome(nomeFinal) &&
+          padrao.excluidoEm,
+      )
+      .map((padrao) => padrao.excluidoEm as string)
+      .sort()
+      .at(-1)
     const padraoExistente = despesasPrevistas.find(
       (padrao) =>
+        !padrao.excluidoEm &&
         normalizarNome(padrao.nome) === normalizarNome(nomeFinal) &&
         padraoEstaVigenteEm(padrao, dataDespesa),
     )
     let padraoVinculadoId = padraoExistente?.id
     let padraoVinculado = padraoExistente
     if (recorrencia !== "avulsa" && !padraoExistente) {
+      let inicioDaVigencia = inicioDoCicloDaDespesa
+      if (ultimaExclusaoDoNome) {
+        const diaSeguinteAExclusao = new Date(
+          `${ultimaExclusaoDoNome}T12:00:00`,
+        )
+        diaSeguinteAExclusao.setDate(diaSeguinteAExclusao.getDate() + 1)
+        inicioDaVigencia = [
+          inicioDoCicloDaDespesa,
+          formatarDataIso(diaSeguinteAExclusao),
+        ].sort().at(-1) as string
+      }
       const pid = gerarProximoIdentificador()
       padraoVinculadoId = pid
       const novoPadrao: DespesaPrevista = {
         id: pid,
         nome: nomeFinal,
         dataInicio: dataDespesa,
-        vigenteDesde: inicioDoCicloDaDespesa,
+        vigenteDesde: inicioDaVigencia,
         valor: v,
         pagamento,
         cartaoId: pagamento === "cartao" ? cartaoDaDespesa?.id : undefined,
@@ -1436,7 +1512,8 @@ export default function GestaoLifeApp({
       const despesasVinculadas = padraoVinculadoId
         ? prev.map((despesa) =>
             despesa.padraoId == null &&
-            normalizarNome(despesa.nome) === normalizarNome(nomeFinal)
+            normalizarNome(despesa.nome) === normalizarNome(nomeFinal) &&
+            (!ultimaExclusaoDoNome || despesa.data > ultimaExclusaoDoNome)
               ? { ...despesa, padraoId: padraoVinculadoId }
               : despesa,
           )
@@ -1577,11 +1654,15 @@ export default function GestaoLifeApp({
 
   // ── Diferença previsão vs realidade ────────────────────────────────────
   const diferencaPrevisao =
-    statusPeriodo === "atual" ? gastoRealComparativo - previsaoAteHoje : null
+    statusPeriodo === "futuro"
+      ? null
+      : gastoRealComparativo - previsaoDoPeriodoComparativo
+  const diferencaPrevisaoAtual =
+    gastoRealAtualComparativo - previsaoAtualAteHoje
   const diferencaDoMesDoCalendario =
     mesCalendario.getFullYear() === HOJE.getFullYear() &&
     mesCalendario.getMonth() === HOJE.getMonth()
-      ? diferencaPrevisao
+      ? diferencaPrevisaoAtual
       : null
   const dataInicialTarefasSelecionadas =
     visao === "semanal"
@@ -1766,7 +1847,7 @@ export default function GestaoLifeApp({
             gastosDoMes={gastosDoPeriodoInsights}
             gastoRealComparativo={gastoRealComparativo}
             projecaoDoMes={projecaoDoMesInsights}
-            previsaoAteHoje={previsaoAteHoje}
+            previsaoDoPeriodo={previsaoDoPeriodoComparativo}
             diferencaPrevisao={diferencaPrevisao}
             semana={semanaInsights}
             diasDaSemana={diasDaSemanaInsights}
@@ -2084,7 +2165,9 @@ export default function GestaoLifeApp({
                   {formatarDataPorExtenso(notaAberta.criadaEm)} às{" "}
                   {formatarHora(notaAberta.criadaEm)}
                   {notaAberta.data &&
-                    ` · vence ${formatarDataPorExtenso(notaAberta.data)}`}
+                    ` · agendado para ${formatarDataPorExtenso(notaAberta.data)}${
+                      notaAberta.hora ? ` às ${notaAberta.hora}` : ""
+                    }`}
                 </p>
                 <div className="mb-2 flex items-center gap-2">
                   <input
@@ -3870,8 +3953,7 @@ export default function GestaoLifeApp({
                         </p>
                       </div>
                       <p className="mt-2 text-[10px] leading-4 text-gray-500">
-                        Considera o ciclo completo, inclusive ocorrências
-                        anteriores ainda não registradas.
+                        Considera o ciclo completo.
                       </p>
                     </div>
                   )}
@@ -4669,7 +4751,7 @@ export default function GestaoLifeApp({
                         ) : (
                           /* ── Visualização normal ── */
                           <>
-                            <div className="flex items-start justify-between mb-1">
+                            <div className="mb-4 flex items-start justify-between gap-3">
                               <div className="flex-1 min-w-0">
                                 <p className="text-sm font-semibold text-gray-900">
                                   {g.nome}
@@ -4678,57 +4760,60 @@ export default function GestaoLifeApp({
                                   {ROTULOS_RECORRENCIA[g.recorrencia]} ·{" "}
                                   {formatarMoeda(g.valor)}/vez
                                 </p>
-                                {g.excluidoEm && (
-                                  <span className="mt-1 inline-flex rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-semibold text-gray-600">
-                                    Excluído em{" "}
-                                    {new Date(
-                                      `${g.excluidoEm}T12:00:00`,
-                                    ).toLocaleDateString("pt-BR")}
-                                  </span>
-                                )}
                               </div>
-                              <div className="flex items-center gap-1.5 shrink-0 ml-3">
-                                <div className="text-right">
-                                  <p className="text-sm font-bold text-gray-900">
-                                    {formatarMoeda(g.valorTotalCiclo)}
-                                  </p>
-                                  <p className="text-[10px] font-medium text-gray-500">
-                                    projeção do ciclo
-                                  </p>
-                                  <p className="mt-1 text-xs font-bold text-orange-600">
-                                    {formatarMoeda(g.projecaoValor)}
-                                  </p>
-                                  <p className="text-[9px] font-medium text-orange-600">
-                                    gasto restante projetado
-                                  </p>
+                              {g.excluidoEm ? (
+                                <span className="shrink-0 rounded-full bg-gray-100 px-2.5 py-1 text-[10px] font-semibold text-gray-600">
+                                  Excluído em{" "}
+                                  {new Date(
+                                    `${g.excluidoEm}T12:00:00`,
+                                  ).toLocaleDateString("pt-BR")}
+                                </span>
+                              ) : (
+                                <div className="flex shrink-0 items-center gap-1">
+                                  <button
+                                    onClick={() => iniciarEdicaoDaPrevisao(g)}
+                                    aria-label="Editar previsão"
+                                    className="rounded-xl p-2.5 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700"
+                                  >
+                                    <IconeEditar />
+                                  </button>
+                                  <button
+                                    onClick={() => excluirPrevisao(g.id)}
+                                    aria-label="Excluir previsão"
+                                    className="rounded-xl p-2.5 text-gray-500 transition-colors hover:bg-red-50 hover:text-red-500"
+                                  >
+                                    <IconeLixeira />
+                                  </button>
                                 </div>
-                                {!g.excluidoEm && (
-                                  <>
-                                    <button
-                                      onClick={() => iniciarEdicaoDaPrevisao(g)}
-                                      aria-label="Editar previsão"
-                                      className="p-2.5 text-gray-500 hover:text-gray-700 transition-colors rounded-xl hover:bg-gray-100"
-                                    >
-                                      <IconeEditar />
-                                    </button>
-                                    <button
-                                      onClick={() => excluirPrevisao(g.id)}
-                                      aria-label="Excluir previsão"
-                                      className="p-2.5 text-gray-500 hover:text-red-500 transition-colors rounded-xl hover:bg-red-50"
-                                    >
-                                      <IconeLixeira />
-                                    </button>
-                                  </>
-                                )}
+                              )}
+                            </div>
+
+                            <div className="grid grid-cols-2 py-1">
+                              <div className="pr-4">
+                                <p className="text-[10px] font-medium text-gray-500">
+                                  Projeção do ciclo
+                                </p>
+                                <p className="mt-1 text-lg font-extrabold text-[#1A56DB]">
+                                  {formatarMoeda(g.valorTotalCiclo)}
+                                </p>
+                              </div>
+                              <div className="border-l border-gray-200 pl-4">
+                                <p className="text-[10px] font-medium leading-tight text-gray-500">
+                                  Gasto restante projetado do ciclo
+                                </p>
+                                <p className="mt-1 text-lg font-extrabold text-orange-600">
+                                  {formatarMoeda(g.projecaoValor)}
+                                </p>
                               </div>
                             </div>
-                            <div className="mt-3">
+
+                            <div className="mt-4">
                               <BarraSegmentada
                                 utilizadas={g.usadas}
                                 naoUtilizadas={g.naoGastas}
                                 restantes={g.restantes}
                               />
-                              <div className="mt-1.5 grid grid-cols-2 gap-x-3 gap-y-1">
+                              <div className="mt-2 grid grid-cols-3 gap-2">
                                 <span
                                   className="text-[10px] font-semibold"
                                   style={{ color: COR_UTILIZADA }}
@@ -4736,63 +4821,67 @@ export default function GestaoLifeApp({
                                   {g.usadas}x gasto{g.usadas !== 1 ? "s" : ""}
                                 </span>
                                 <span
-                                  className="text-right text-[10px] font-semibold"
+                                  className="text-center text-[10px] font-semibold"
                                   style={{ color: COR_NAO_UTILIZADA }}
                                 >
                                   {g.naoGastas}x não gasto
                                 </span>
                                 <span
-                                  className="text-[10px] font-semibold"
-                                  style={{ color: "#5B9BD5" }}
+                                  className="text-right text-[10px] font-semibold"
+                                  style={{ color: COR_RESTANTE }}
                                 >
                                   {g.restantes}x ainda previsto
                                 </span>
-                                <span className="text-right text-[10px] font-semibold text-gray-600">
+                              </div>
+                              <p className="mt-3 text-right text-[10px] font-semibold text-gray-600">
                                   {g.totalPrevisto} total
                                   {g.excedentes > 0
                                     ? ` · ${g.excedentes} extra${
                                         g.excedentes !== 1 ? "s" : ""
                                       }`
                                     : ""}
-                                </span>
-                              </div>
+                              </p>
                             </div>
                           </>
                         )}
                       </div>
                     ))}
-                    <div className="border border-gray-200 rounded-2xl p-4 bg-gray-50">
-                      <div className="flex items-center justify-between border-b border-gray-200 pb-2">
-                        <span className="text-sm text-gray-500 font-medium">
-                          Total projetado
-                        </span>
-                        <span className="text-base font-bold text-gray-900">
-                          {formatarMoeda(
-                            gruposProjecao.reduce(
-                              (a, g) => a + g.valorTotalCiclo,
-                              0,
-                            ),
-                          )}
-                        </span>
-                      </div>
-                      <div className="mt-2 flex items-center justify-between">
-                        <span className="text-sm font-medium text-orange-700">
-                          Total de gasto restante projetado
-                        </span>
-                        <span className="text-base font-bold text-orange-700">
-                          {formatarMoeda(
-                            gruposProjecao.reduce(
-                              (a, g) => a + g.projecaoValor,
-                              0,
-                            ),
-                          )}
-                        </span>
-                      </div>
-                    </div>
                   </div>
                 )}
               </div>
               {/* fim scroll content */}
+              {gruposProjecao.length > 0 && (
+                <div className="flex-shrink-0 border-t border-gray-100 bg-white px-5 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-3 shadow-[0_-8px_24px_rgba(15,23,42,0.08)]">
+                  <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4">
+                    <div className="flex items-center justify-between border-b border-gray-200 pb-2">
+                      <span className="text-sm font-medium text-gray-500">
+                        Total projetado
+                      </span>
+                      <span className="text-base font-bold text-gray-900">
+                        {formatarMoeda(
+                          gruposProjecao.reduce(
+                            (total, grupo) => total + grupo.valorTotalCiclo,
+                            0,
+                          ),
+                        )}
+                      </span>
+                    </div>
+                    <div className="mt-2 flex items-center justify-between gap-4">
+                      <span className="text-sm font-medium leading-tight text-orange-700">
+                        Total de gasto restante projetado do ciclo
+                      </span>
+                      <span className="shrink-0 text-base font-bold text-orange-700">
+                        {formatarMoeda(
+                          gruposProjecao.reduce(
+                            (total, grupo) => total + grupo.projecaoValor,
+                            0,
+                          ),
+                        )}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}
