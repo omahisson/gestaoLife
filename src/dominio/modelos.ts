@@ -38,6 +38,7 @@ export interface Nota {
   titulo: string
   blocos: BlocoNota[]
   data?: string
+  hora?: string
   fixada: boolean
   arquivada: boolean
   criadaEm: string
@@ -63,6 +64,8 @@ export interface Despesa {
   cartaoNome?: string
   recorrencia: TipoRecorrencia
   ocorrenciasRestantes?: number
+  /** Chave da ocorrência prevista consumida por esta despesa. */
+  ocorrenciaPrevistaEm?: string
   metaId?: number
 }
 
@@ -72,6 +75,11 @@ export interface DespesaPrevista {
   valor: number
   /** Data da primeira ocorrência, usada como âncora da recorrência. */
   dataInicio?: string
+  /** Primeiro dia do ciclo a partir do qual o padrão produz ocorrências. */
+  vigenteDesde?: string
+  /** Último dia de vigência, inclusive. */
+  vigenteAte?: string
+  excluidoEm?: string
   pagamento?: TipoPagamento
   cartaoId?: number
   cartaoNome?: string

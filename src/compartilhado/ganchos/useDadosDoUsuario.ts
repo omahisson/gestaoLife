@@ -2,6 +2,8 @@ import { useEffect, useState } from "react"
 import {
   carregarDadosDoUsuario,
   salvarDadosDoUsuario,
+  substituirDadosDoUsuario,
+  type DadosDoUsuario,
 } from "../../dados/repositorio-remoto"
 import type {
   Cartao,
@@ -11,14 +13,16 @@ import type {
   Nota,
 } from "../../dominio/modelos"
 
-export default function useDadosDoUsuario(usuarioId: string, nomeInicial: string) {
+export default function useDadosDoUsuario(
+  usuarioId: string,
+  nomeInicial: string,
+) {
   const [nomeUsuario, definirNomeUsuario] = useState("")
   const [diaFechamento, definirDiaFechamento] = useState(30)
   const [cartoes, definirCartoes] = useState<Cartao[]>([])
   const [despesas, definirDespesas] = useState<Despesa[]>([])
-  const [despesasPrevistas, definirDespesasPrevistas] = useState<
-    DespesaPrevista[]
-  >([])
+  const [despesasPrevistas, definirDespesasPrevistas] =
+    useState<DespesaPrevista[]>([])
   const [notas, definirNotas] = useState<Nota[]>([])
   const [metas, definirMetas] = useState<Meta[]>([])
   const [dadosCarregados, definirDadosCarregados] = useState(false)
@@ -78,6 +82,30 @@ export default function useDadosDoUsuario(usuarioId: string, nomeInicial: string
     metas,
   ])
 
+  function obterDadosAtuais(): DadosDoUsuario {
+    return {
+      nomeUsuario,
+      diaFechamento,
+      cartoes,
+      despesas,
+      despesasPrevistas,
+      notas,
+      metas,
+    }
+  }
+
+  async function importarDados(dados: DadosDoUsuario) {
+    await substituirDadosDoUsuario(usuarioId, dados)
+    definirNomeUsuario(dados.nomeUsuario)
+    definirDiaFechamento(dados.diaFechamento)
+    definirCartoes(dados.cartoes)
+    definirDespesas(dados.despesas)
+    definirDespesasPrevistas(dados.despesasPrevistas)
+    definirNotas(dados.notas)
+    definirMetas(dados.metas)
+    definirErroDosDados("")
+  }
+
   return {
     nomeUsuario,
     definirNomeUsuario,
@@ -96,5 +124,7 @@ export default function useDadosDoUsuario(usuarioId: string, nomeInicial: string
     dadosCarregados,
     erroDosDados,
     recarregarDados: () => definirIndiceDeRecarga((indice) => indice + 1),
+    obterDadosAtuais,
+    importarDados,
   }
 }

@@ -39,9 +39,19 @@ export default function PainelTarefas({
   }
 
   const rotuloData =
-    dataFinalSelecionada && dataFinalSelecionada !== dataSelecionada
-      ? `${formatarRotuloData(dataSelecionada)} a ${formatarRotuloData(dataFinalSelecionada)}`
-      : formatarRotuloData(dataSelecionada)
+    dataFinalSelecionada &&
+    dataFinalSelecionada !== dataSelecionada &&
+    new Date(`${dataSelecionada}T12:00:00`).getDate() === 1 &&
+    new Date(`${dataFinalSelecionada}T12:00:00`).getDate() ===
+      new Date(
+        new Date(`${dataFinalSelecionada}T12:00:00`).getFullYear(),
+        new Date(`${dataFinalSelecionada}T12:00:00`).getMonth() + 1,
+        0,
+      ).getDate()
+      ? `${MESES_POR_EXTENSO[new Date(`${dataSelecionada}T12:00:00`).getMonth()]} de ${new Date(`${dataSelecionada}T12:00:00`).getFullYear()}`
+      : dataFinalSelecionada && dataFinalSelecionada !== dataSelecionada
+        ? `${formatarRotuloData(dataSelecionada)} a ${formatarRotuloData(dataFinalSelecionada)}`
+        : formatarRotuloData(dataSelecionada)
   const exibindoIntervalo =
     !!dataFinalSelecionada && dataFinalSelecionada !== dataSelecionada
 

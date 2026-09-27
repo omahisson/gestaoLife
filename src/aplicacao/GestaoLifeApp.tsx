@@ -13,6 +13,7 @@ import {
   IconeAlfinete,
   IconeConfirmar,
   IconeEditar,
+  IconeDireita,
   IconeEsquerda,
   IconeFechar,
   IconeLapis,
@@ -44,14 +45,15 @@ import type {
 import {
   calcularEconomiaEstimada,
   calcularOcorrenciasEvitadas,
-  calcularProjecao,
   formatarMoeda,
 } from "../dominio/regras-financeiras"
 import {
-  calcularDistribuicaoDasOcorrencias,
+  calcularDistribuicaoDoPadrao,
   despesaPertenceAoPadrao,
   normalizarNome,
   obterFrequenciaMensalDoPadrao,
+  obterOcorrenciaParaNovaDespesa,
+  obterOcorrenciasPrevistasNoPeriodo,
   obterTotalPrevistoNoPeriodo,
 } from "../dominio/regras-de-projecao"
 import {
@@ -71,6 +73,11 @@ import TelaInicio from "../funcionalidades/inicio/TelaInicio"
 import TelaInsights from "../funcionalidades/insights/TelaInsights"
 import TelaPerfil from "../funcionalidades/perfil/TelaPerfil"
 import TelaVida from "../funcionalidades/vida/TelaVida"
+import {
+  criarDocumentoDeExportacao,
+  lerDocumentoDeImportacao,
+  TAMANHO_MAXIMO_IMPORTACAO,
+} from "../dados/transferencia-de-dados"
 
 interface PropriedadesGestaoLifeApp {
   usuario: UsuarioAutenticado
@@ -118,6 +125,67 @@ function useCampoVisivelAoAbrir(
   }, [aberto, campoRef])
 }
 
+function SeletorDeQuantidade({
+  rotulo,
+  valor,
+  aoAlterar,
+}: {
+  rotulo: string
+  valor: string
+  aoAlterar: (valor: string) => void
+}) {
+  const quantidade = Math.min(Math.max(parseInt(valor) || 1, 1), 10_000)
+  return (
+    <div className="flex items-center gap-2 rounded-2xl bg-gray-100 px-4 py-3.5">
+      <span className="min-w-0 flex-1 text-sm font-medium text-gray-600">
+        {rotulo}
+      </span>
+      <button
+        type="button"
+        disabled={quantidade <= 1}
+        onClick={() => aoAlterar(String(Math.max(quantidade - 1, 1)))}
+        className="rounded-lg bg-white p-2 text-gray-700 disabled:cursor-not-allowed disabled:opacity-30"
+        aria-label="Diminuir quantidade"
+      >
+        <IconeEsquerda />
+      </button>
+      <input
+        type="number"
+        inputMode="numeric"
+        min="1"
+        max="10000"
+        value={valor}
+        onChange={(evento) => {
+          const proximoValor = evento.target.value
+          aoAlterar(
+            proximoValor === ""
+              ? ""
+              : String(Math.min(Math.max(parseInt(proximoValor) || 1, 1), 10_000)),
+          )
+        }}
+        className="w-12 bg-transparent text-center text-sm font-bold text-gray-900 outline-none"
+      />
+      <button
+        type="button"
+        disabled={quantidade >= 10_000}
+        onClick={() => aoAlterar(String(Math.min(quantidade + 1, 10_000)))}
+        className="rounded-lg bg-white p-2 text-gray-700 disabled:cursor-not-allowed disabled:opacity-30"
+        aria-label="Aumentar quantidade"
+      >
+        <IconeDireita />
+      </button>
+    </div>
+  )
+}
+
+function padraoEstaVigenteEm(padrao: DespesaPrevista, dataIso: string) {
+  if (padrao.excluidoEm) return false
+  return (
+    (!padrao.vigenteDesde || padrao.vigenteDesde <= dataIso) &&
+    (!padrao.vigenteAte || padrao.vigenteAte >= dataIso)
+  )
+}
+
 // ── Componente principal ──────────────────────────────────────────────────
 export default function GestaoLifeApp({
   usuario,
@@ -143,6 +211,8 @@ export default function GestaoLifeApp({
     dadosCarregados,
     erroDosDados,
     recarregarDados,
+    obterDadosAtuais,
+    importarDados,
   } = useDadosDoUsuario(usuario.id, usuario.nome)
   const gerarProximoIdentificador = useGeradorDeIdentificador()
 
@@ -232,6 +302,11 @@ export default function GestaoLifeApp({
     { id: 200, tipo: "texto", texto: "", concluida: false },
   ])
   const [dataNovaNota, definirDataNovaNota] = useState("")
+  const [horaNovaNota, definirHoraNovaNota] = useState("")
+  const [agendamentoDaNotaAberto, definirAgendamentoDaNotaAberto] =
+    useState(false)
+  const [agendamentoDaNovaNotaAberto, definirAgendamentoDaNovaNotaAberto] =
+    useState(false)
   const [novaNotaFixada, definirNovaNotaFixada] = useState(false)
 
   // ── Metas ──────────────────────────────────────────────────────────────
@@ -287,12 +362,6 @@ export default function GestaoLifeApp({
   )
   const inicioCicloIso = formatarDataIso(periodoFinanceiroAtual.inicio)
   const fimCicloIso = formatarDataIso(periodoFinanceiroAtual.fim)
-  const quantidadeDiasDoCiclo =
-    Math.floor(
-      (periodoFinanceiroAtual.fim.getTime() -
-        periodoFinanceiroAtual.inicio.getTime()) /
-        86_400_000,
-    ) + 1
   const despesasVisao = useMemo(() => {
     if (visao === "semanal")
       return despesas.filter((d) => d.data === formatarDataIso(diaSelecionado))
@@ -344,30 +413,13 @@ export default function GestaoLifeApp({
       : formatarDataIso(
           new Date(mesInsights.getFullYear(), mesInsights.getMonth() + 1, 0),
         )
-  const quantidadeDiasDoPeriodoInsights =
-    statusPeriodo === "atual"
-      ? quantidadeDiasDoCiclo
-      : new Date(
-          mesInsights.getFullYear(),
-          mesInsights.getMonth() + 1,
-          0,
-        ).getDate()
-  const diasDecorridosNoPeriodoInsights =
-    statusPeriodo === "atual"
-      ? Math.min(
-          periodoFinanceiroAtual.diasDecorridos,
-          quantidadeDiasDoPeriodoInsights,
-        )
-      : statusPeriodo === "passado"
-        ? quantidadeDiasDoPeriodoInsights
-        : 0
-
-  const gastosDoMesInsights = useMemo(
+  const mesCalendarioIso = formatarMesIso(mesCalendario)
+  const gastosDoMesCalendario = useMemo(
     () =>
       despesas
-        .filter((d) => d.data.startsWith(mesInsightsIso))
-        .reduce((a, d) => a + d.valor, 0),
-    [despesas, mesInsightsIso],
+        .filter((despesa) => despesa.data.startsWith(mesCalendarioIso))
+        .reduce((total, despesa) => total + despesa.valor, 0),
+    [despesas, mesCalendarioIso],
   )
   const despesasDoCicloAtual = useMemo(
     () =>
@@ -395,22 +447,14 @@ export default function GestaoLifeApp({
   const gruposProjecao = useMemo(() => {
     return despesasPrevistas
       .map((padrao) => {
-        const usadas = despesasDoPeriodoInsights.filter((despesa) =>
-          despesaPertenceAoPadrao(despesa, padrao),
-        ).length
-        const totalPrevisto = obterTotalPrevistoNoPeriodo(
+        const distribuicao = calcularDistribuicaoDoPadrao({
           padrao,
-          inicioPeriodoInsightsIso,
-          fimPeriodoInsightsIso,
+          inicioPeriodoIso: inicioPeriodoInsightsIso,
+          fimPeriodoIso: fimPeriodoInsightsIso,
           despesas,
-        )
-        const distribuicao = calcularDistribuicaoDasOcorrencias({
-          recorrencia: padrao.recorrencia,
-          totalPrevisto,
-          quantidadeRegistrada: usadas,
-          diasDecorridos: diasDecorridosNoPeriodoInsights,
-          quantidadeDiasDoPeriodo: quantidadeDiasDoPeriodoInsights,
+          dataReferenciaIso: formatarDataIso(HOJE),
         })
+        const totalPrevisto = distribuicao.totalPrevisto
         const ultimaDespesa = [...despesas]
           .filter((despesa) => despesaPertenceAoPadrao(despesa, padrao))
           .sort(
@@ -431,9 +475,15 @@ export default function GestaoLifeApp({
           restantes: distribuicao.restantes,
           disponiveis: distribuicao.disponiveis,
           excedentes: distribuicao.excedentes,
-          projecaoValor: padrao.valor * distribuicao.disponiveis,
+          projecaoValor: padrao.valor * distribuicao.restantes,
+          valorTotalCiclo: padrao.valor * totalPrevisto,
+          excluidoEm: padrao.excluidoEm,
         }
       })
+      .filter(
+        (grupo) =>
+          grupo.totalPrevisto > 0 || grupo.usadas > 0 || grupo.excedentes > 0,
+      )
       .sort((a, b) => b.projecaoValor - a.projecaoValor)
   }, [
     despesas,
@@ -441,8 +491,6 @@ export default function GestaoLifeApp({
     despesasPrevistas,
     fimPeriodoInsightsIso,
     inicioPeriodoInsightsIso,
-    diasDecorridosNoPeriodoInsights,
-    quantidadeDiasDoPeriodoInsights,
   ])
 
   const projecaoDoMesInsights = useMemo(() => {
@@ -456,50 +504,22 @@ export default function GestaoLifeApp({
   // Previsão proporcional até hoje (baseada nos padrões do ciclo).
   const previsaoAteHoje = useMemo(() => {
     if (statusPeriodo !== "atual") return 0
-    const diasDecorridos = Math.min(
-      periodoFinanceiroAtual.diasDecorridos,
-      quantidadeDiasDoCiclo,
-    )
     const previstoRecorrente = despesasPrevistas.reduce((total, padrao) => {
-      const totalNoCiclo = obterTotalPrevistoNoPeriodo(
+      const ocorrenciasAteHoje = obterOcorrenciasPrevistasNoPeriodo(
         padrao,
         inicioCicloIso,
         fimCicloIso,
-        despesas,
-      )
-      let ocorrenciasAteHoje = totalNoCiclo
-      if (padrao.recorrencia === "diaria")
-        ocorrenciasAteHoje = Math.min(totalNoCiclo, diasDecorridos)
-      else if (padrao.recorrencia === "semanal")
-        ocorrenciasAteHoje = Math.min(
-          totalNoCiclo,
-          Math.ceil(diasDecorridos / 7),
-        )
-      else if (padrao.recorrencia === "personalizada")
-        ocorrenciasAteHoje = Math.min(
-          totalNoCiclo,
-          Math.ceil((totalNoCiclo * diasDecorridos) / quantidadeDiasDoCiclo),
-        )
+      ).filter(
+        (ocorrencia) => ocorrencia.inicio <= formatarDataIso(HOJE),
+      ).length
       return total + padrao.valor * ocorrenciasAteHoje
     }, 0)
     return previstoRecorrente
-  }, [
-    despesasPrevistas,
-    despesas,
-    fimCicloIso,
-    inicioCicloIso,
-    periodoFinanceiroAtual.diasDecorridos,
-    quantidadeDiasDoCiclo,
-    statusPeriodo,
-  ])
+  }, [despesasPrevistas, despesas, fimCicloIso, inicioCicloIso, statusPeriodo])
 
   // Comparativo previsão vs realidade por categoria
   const comparativoItens = useMemo(() => {
     if (statusPeriodo !== "atual") return []
-    const diasDecorridos = Math.min(
-      periodoFinanceiroAtual.diasDecorridos,
-      quantidadeDiasDoCiclo,
-    )
     const categorias = new Map<string, {
       nome: string
       previsto: number
@@ -507,25 +527,13 @@ export default function GestaoLifeApp({
       padroes: DespesaPrevista[]
     }>()
     despesasPrevistas.forEach((padrao) => {
-      const totalNoCiclo = obterTotalPrevistoNoPeriodo(
+      const ocorrenciasAteHoje = obterOcorrenciasPrevistasNoPeriodo(
         padrao,
         inicioCicloIso,
         fimCicloIso,
-        despesas,
-      )
-      let ocorrenciasAteHoje = totalNoCiclo
-      if (padrao.recorrencia === "diaria")
-        ocorrenciasAteHoje = Math.min(totalNoCiclo, diasDecorridos)
-      else if (padrao.recorrencia === "semanal")
-        ocorrenciasAteHoje = Math.min(
-          totalNoCiclo,
-          Math.ceil(diasDecorridos / 7),
-        )
-      else if (padrao.recorrencia === "personalizada")
-        ocorrenciasAteHoje = Math.min(
-          totalNoCiclo,
-          Math.ceil((totalNoCiclo * diasDecorridos) / quantidadeDiasDoCiclo),
-        )
+      ).filter(
+        (ocorrencia) => ocorrencia.inicio <= formatarDataIso(HOJE),
+      ).length
       const chave = normalizarNome(padrao.nome)
       const categoria = categorias.get(chave) ?? {
         nome: padrao.nome,
@@ -576,8 +584,6 @@ export default function GestaoLifeApp({
     despesas,
     fimCicloIso,
     inicioCicloIso,
-    periodoFinanceiroAtual.diasDecorridos,
-    quantidadeDiasDoCiclo,
     statusPeriodo,
   ])
 
@@ -606,24 +612,46 @@ export default function GestaoLifeApp({
     [despesas, diasDaSemanaInsights],
   )
 
-  const valorProjecaoDaDespesa = useMemo(() => {
+  const previsaoDaNovaDespesa = useMemo(() => {
     const v = parseFloat(valorDespesa.replace(",", "."))
-    if (isNaN(v) || v <= 0) return 0
+    if (isNaN(v) || v <= 0 || recorrencia === "avulsa") return null
     const occ =
       recorrencia === "personalizada"
         ? parseInt(ocorrenciasPersonalizadas) || 1
         : undefined
-    return calcularProjecao(
-      v,
-      recorrencia,
-      periodoFinanceiroAtual.diasRestantes,
-      occ,
+    const referencia = new Date(`${dataDespesa}T12:00:00`)
+    const periodo = obterPeriodoDoCicloFinanceiro(diaFechamento, referencia)
+    const inicioIso = formatarDataIso(periodo.inicio)
+    const fimIso = formatarDataIso(periodo.fim)
+    const total = obterTotalPrevistoNoPeriodo(
+      {
+        id: 0,
+        nome: nomeDespesa.trim(),
+        dataInicio: dataDespesa,
+        vigenteDesde: inicioIso,
+        valor: v,
+        recorrencia,
+        ocorrenciasPorCiclo: occ,
+        restantes: occ ?? 1,
+      },
+      inicioIso,
+      fimIso,
     )
+    const restantesAposEsta = Math.max(total - 1, 0)
+    return {
+      total,
+      restantesAposEsta,
+      valorDoCiclo: v * total,
+      valorRestante: v * restantesAposEsta,
+      fimIso,
+    }
   }, [
     valorDespesa,
     recorrencia,
     ocorrenciasPersonalizadas,
-    periodoFinanceiroAtual.diasRestantes,
+    dataDespesa,
+    diaFechamento,
+    nomeDespesa,
   ])
 
   // ── Operações do calendário ─────────────────────────────────────────────
@@ -800,6 +828,9 @@ export default function GestaoLifeApp({
         id: identificadorPrevisaoEmEdicao,
         nome,
         dataInicio: padraoAnterior.dataInicio,
+        vigenteDesde: padraoAnterior.vigenteDesde,
+        vigenteAte: padraoAnterior.vigenteAte,
+        excluidoEm: padraoAnterior.excluidoEm,
         valor: v,
         pagamento: pagamentoPrevisaoEmEdicao,
         cartaoId:
@@ -870,12 +901,29 @@ export default function GestaoLifeApp({
     definirIdentificadorPrevisaoEmEdicao(null)
   }
   function excluirPrevisao(id: number) {
-    definirDespesasPrevistas((prev) => prev.filter((p) => p.id !== id))
-    definirDespesas((prev) =>
-      prev.map((despesa) =>
-        despesa.padraoId === id ? { ...despesa, padraoId: undefined } : despesa,
-      ),
+    const padrao = despesasPrevistas.find((item) => item.id === id)
+    if (!padrao) return
+    if (
+      !window.confirm(
+        `Excluir a projeção "${padrao.nome}"? O histórico com despesas será preservado.`,
+      )
     )
+      return
+    const possuiDespesas = despesas.some((despesa) =>
+      despesaPertenceAoPadrao(despesa, padrao),
+    )
+    if (possuiDespesas) {
+      const hojeIso = formatarDataIso(HOJE)
+      definirDespesasPrevistas((prev) =>
+        prev.map((item) =>
+          item.id === id
+            ? { ...item, vigenteAte: hojeIso, excluidoEm: hojeIso }
+            : item,
+        ),
+      )
+    } else {
+      definirDespesasPrevistas((prev) => prev.filter((item) => item.id !== id))
+    }
     if (identificadorPrevisaoEmEdicao === id)
       definirIdentificadorPrevisaoEmEdicao(null)
   }
@@ -896,9 +944,11 @@ export default function GestaoLifeApp({
   }
   function salvarMeta() {
     const nome = nomeNovaMeta.trim()
+    const hojeIso = formatarDataIso(HOJE)
     const padraoDaMeta = despesasPrevistas.find(
       (padrao) =>
-        normalizarNome(padrao.nome) === normalizarNome(despesaNovaMeta),
+        normalizarNome(padrao.nome) === normalizarNome(despesaNovaMeta) &&
+        padraoEstaVigenteEm(padrao, hojeIso),
     )
     const valorPersonalizado = parseFloat(valorNovaMeta.replace(",", "."))
     const frequenciaPersonalizada = Number(frequenciaNovaMeta)
@@ -941,7 +991,7 @@ export default function GestaoLifeApp({
       ? usarPadraoNaNovaMeta
         ? padraoDaMeta?.nome
         : despesaNovaMeta.trim()
-        : undefined
+      : undefined
     const novoMetaId = gerarProximoIdentificador()
     definirMetas((prev) => [
       ...prev,
@@ -1036,13 +1086,21 @@ export default function GestaoLifeApp({
     const result: Array<{ bloco: BlocoNota; nota: Nota }> = []
     notas.forEach((nota) => {
       nota.blocos.forEach((bloco) => {
+        const dataEfetiva = bloco.data ?? nota.data
         if (
           bloco.tipo === "checkbox" &&
-          bloco.data &&
-          bloco.data >= dataInicial &&
-          bloco.data <= dataFinal
+          dataEfetiva &&
+          dataEfetiva >= dataInicial &&
+          dataEfetiva <= dataFinal
         )
-          result.push({ bloco, nota })
+          result.push({
+            bloco: {
+              ...bloco,
+              data: dataEfetiva,
+              hora: bloco.hora ?? nota.hora,
+            },
+            nota,
+          })
       })
     })
     return result.sort((a, b) =>
@@ -1056,7 +1114,7 @@ export default function GestaoLifeApp({
     let count = 0
     notas.forEach((nota) =>
       nota.blocos.forEach((b) => {
-        if (b.tipo === "checkbox" && b.data === dataStr) count++
+        if (b.tipo === "checkbox" && (b.data ?? nota.data) === dataStr) count++
       }),
     )
     return count
@@ -1070,6 +1128,7 @@ export default function GestaoLifeApp({
   }
 
   function abrirNotaDoCalendario(nota: Nota) {
+    definirAgendamentoDaNotaAberto(false)
     definirNotaAberta(nota)
   }
 
@@ -1116,8 +1175,10 @@ export default function GestaoLifeApp({
       },
     ])
     definirDataNovaNota("")
+    definirHoraNovaNota("")
     definirNovaNotaFixada(false)
     definirBlocoEditandoData(null)
+    definirAgendamentoDaNovaNotaAberto(false)
     definirModalNovaNotaAberta(true)
   }
   function salvarNota() {
@@ -1130,6 +1191,7 @@ export default function GestaoLifeApp({
         titulo,
         blocos: blocosNovaNota,
         data: dataNovaNota || undefined,
+        hora: dataNovaNota ? horaNovaNota || undefined : undefined,
         fixada: novaNotaFixada,
         arquivada: false,
         criadaEm: new Date().toISOString(),
@@ -1236,7 +1298,9 @@ export default function GestaoLifeApp({
     campoNomeNovaDespesaRef.current?.blur()
     const chave = normalizarNome(nome)
     const prev = despesasPrevistas.find(
-      (padrao) => normalizarNome(padrao.nome) === chave,
+      (padrao) =>
+        normalizarNome(padrao.nome) === chave &&
+        padraoEstaVigenteEm(padrao, dataDespesa),
     )
     const ref = [...despesas]
       .filter((despesa) => normalizarNome(despesa.nome) === chave)
@@ -1258,17 +1322,20 @@ export default function GestaoLifeApp({
       )
     }
     if (prev) {
-      const quantidadeRegistradaNoCiclo = despesasDoCicloAtual.filter(
-        (despesa) => despesaPertenceAoPadrao(despesa, prev),
-      ).length
-      const previsaoDoPadraoFoiConcluida =
-        quantidadeRegistradaNoCiclo >=
-        obterTotalPrevistoNoPeriodo(
-          prev,
-          inicioCicloIso,
-          fimCicloIso,
-          despesas,
-        )
+      const periodoSelecionado = obterPeriodoDoCicloFinanceiro(
+        diaFechamento,
+        new Date(`${dataDespesa}T12:00:00`),
+      )
+      const inicioSelecionado = formatarDataIso(periodoSelecionado.inicio)
+      const fimSelecionado = formatarDataIso(periodoSelecionado.fim)
+      const distribuicao = calcularDistribuicaoDoPadrao({
+        padrao: prev,
+        inicioPeriodoIso: inicioSelecionado,
+        fimPeriodoIso: fimSelecionado,
+        despesas,
+        dataReferenciaIso: formatarDataIso(HOJE),
+      })
+      const previsaoDoPadraoFoiConcluida = distribuicao.disponiveis === 0
       definirPadraoSelecionadoId(prev.id)
       definirRecorrencia(
         previsaoDoPadraoFoiConcluida ? "avulsa" : prev.recorrencia,
@@ -1278,8 +1345,8 @@ export default function GestaoLifeApp({
           String(
             obterTotalPrevistoNoPeriodo(
               prev,
-              inicioCicloIso,
-              fimCicloIso,
+              inicioSelecionado,
+              fimSelecionado,
               despesas,
             ),
           ),
@@ -1311,7 +1378,8 @@ export default function GestaoLifeApp({
     if (
       recorrencia === "personalizada" &&
       (!Number.isInteger(Number(ocorrenciasPersonalizadas)) ||
-        Number(ocorrenciasPersonalizadas) < 1)
+        Number(ocorrenciasPersonalizadas) < 1 ||
+        Number(ocorrenciasPersonalizadas) > 10_000)
     )
       camposFaltando.push("quantidade de ocorrências")
     if (camposFaltando.length > 0) {
@@ -1325,56 +1393,64 @@ export default function GestaoLifeApp({
         ? parseInt(ocorrenciasPersonalizadas)
         : undefined
     const nomeFinal = nomeDespesa.trim()
+    const periodoDaDespesa = obterPeriodoDoCicloFinanceiro(
+      diaFechamento,
+      new Date(`${dataDespesa}T12:00:00`),
+    )
+    const inicioDoCicloDaDespesa = formatarDataIso(periodoDaDespesa.inicio)
+    const fimDoCicloDaDespesa = formatarDataIso(periodoDaDespesa.fim)
     const padraoExistente = despesasPrevistas.find(
-      (padrao) => normalizarNome(padrao.nome) === normalizarNome(nomeFinal),
+      (padrao) =>
+        normalizarNome(padrao.nome) === normalizarNome(nomeFinal) &&
+        padraoEstaVigenteEm(padrao, dataDespesa),
     )
     let padraoVinculadoId = padraoExistente?.id
+    let padraoVinculado = padraoExistente
     if (recorrencia !== "avulsa" && !padraoExistente) {
       const pid = gerarProximoIdentificador()
       padraoVinculadoId = pid
+      const novoPadrao: DespesaPrevista = {
+        id: pid,
+        nome: nomeFinal,
+        dataInicio: dataDespesa,
+        vigenteDesde: inicioDoCicloDaDespesa,
+        valor: v,
+        pagamento,
+        cartaoId: pagamento === "cartao" ? cartaoDaDespesa?.id : undefined,
+        cartaoNome: pagamento === "cartao" ? cartaoDaDespesa?.nome : undefined,
+        recorrencia,
+        ocorrenciasPorCiclo: occ,
+        restantes: occ ?? 1,
+      }
       const totalPrevisto = obterTotalPrevistoNoPeriodo(
-        {
-          id: pid,
-          nome: nomeFinal,
-          dataInicio: dataDespesa,
-          valor: v,
-          pagamento,
-          cartaoId: pagamento === "cartao" ? cartaoDaDespesa?.id : undefined,
-          cartaoNome:
-            pagamento === "cartao" ? cartaoDaDespesa?.nome : undefined,
-          recorrencia,
-          ocorrenciasPorCiclo: occ,
-          restantes: occ ?? 1,
-        },
-        inicioCicloIso,
-        fimCicloIso,
+        novoPadrao,
+        inicioDoCicloDaDespesa,
+        fimDoCicloDaDespesa,
       )
-      definirDespesasPrevistas((prev) => [
-        ...prev,
-        {
-          id: pid,
-          nome: nomeFinal,
-          dataInicio: dataDespesa,
-          valor: v,
-          pagamento,
-          cartaoId: pagamento === "cartao" ? cartaoDaDespesa?.id : undefined,
-          cartaoNome:
-            pagamento === "cartao" ? cartaoDaDespesa?.nome : undefined,
-          recorrencia,
-          ocorrenciasPorCiclo: occ,
-          restantes: totalPrevisto,
-        },
-      ])
+      novoPadrao.restantes = totalPrevisto
+      padraoVinculado = novoPadrao
+      definirDespesasPrevistas((prev) => [...prev, novoPadrao])
     }
     const did = gerarProximoIdentificador()
     definirDespesas((prev) => {
       const despesasVinculadas = padraoVinculadoId
         ? prev.map((despesa) =>
+            despesa.padraoId == null &&
             normalizarNome(despesa.nome) === normalizarNome(nomeFinal)
               ? { ...despesa, padraoId: padraoVinculadoId }
               : despesa,
           )
         : prev
+      const ocorrenciaPrevistaEm = padraoVinculado
+        ? obterOcorrenciaParaNovaDespesa({
+            padrao: padraoVinculado,
+            inicioPeriodoIso: inicioDoCicloDaDespesa,
+            fimPeriodoIso: fimDoCicloDaDespesa,
+            despesas: despesasVinculadas,
+            dataDespesaIso: dataDespesa,
+            hojeIso: formatarDataIso(HOJE),
+          })
+        : undefined
       return [
         ...despesasVinculadas,
         {
@@ -1389,6 +1465,9 @@ export default function GestaoLifeApp({
             pagamento === "cartao" ? cartaoDaDespesa?.nome : undefined,
           recorrencia,
           ocorrenciasRestantes: occ,
+          ocorrenciaPrevistaEm: padraoVinculado
+            ? (ocorrenciaPrevistaEm ?? "extra")
+            : undefined,
         },
       ]
     })
@@ -1473,22 +1552,57 @@ export default function GestaoLifeApp({
     )
   }
 
+  function exportarDadosDaConta() {
+    const documento = criarDocumentoDeExportacao(obterDadosAtuais())
+    const arquivo = new Blob([JSON.stringify(documento, null, 2)], {
+      type: "application/json;charset=utf-8",
+    })
+    const endereco = URL.createObjectURL(arquivo)
+    const link = document.createElement("a")
+    link.href = endereco
+    link.download = `gestao-life-${usuario.login}-${formatarDataIso(HOJE)}.json`
+    link.click()
+    URL.revokeObjectURL(endereco)
+  }
+
+  async function importarDadosDaConta(arquivo: File) {
+    if (arquivo.size > TAMANHO_MAXIMO_IMPORTACAO)
+      throw new Error("O arquivo ultrapassa o limite de 10 MB.")
+    const dados = lerDocumentoDeImportacao(await arquivo.text())
+    await importarDados(dados)
+  }
+
   const pagamentosDisponiveis: TipoPagamento[] =
     cartoes.length > 0 ? ["pix", "dinheiro", "cartao"] : ["pix", "dinheiro"]
 
   // ── Diferença previsão vs realidade ────────────────────────────────────
   const diferencaPrevisao =
     statusPeriodo === "atual" ? gastoRealComparativo - previsaoAteHoje : null
+  const diferencaDoMesDoCalendario =
+    mesCalendario.getFullYear() === HOJE.getFullYear() &&
+    mesCalendario.getMonth() === HOJE.getMonth()
+      ? diferencaPrevisao
+      : null
   const dataInicialTarefasSelecionadas =
     visao === "semanal"
       ? formatarDataIso(diaSelecionado)
       : inicioIntervalo
         ? formatarDataIso(inicioIntervalo)
-        : null
+        : formatarDataIso(
+            new Date(mesCalendario.getFullYear(), mesCalendario.getMonth(), 1),
+          )
   const dataFinalTarefasSelecionadas =
     visao === "mensal" && fimIntervalo
       ? formatarDataIso(fimIntervalo)
-      : dataInicialTarefasSelecionadas
+      : visao === "mensal" && !inicioIntervalo
+        ? formatarDataIso(
+            new Date(
+              mesCalendario.getFullYear(),
+              mesCalendario.getMonth() + 1,
+              0,
+            ),
+          )
+        : dataInicialTarefasSelecionadas
   const tarefasDaDataSelecionada = dataInicialTarefasSelecionadas
     ? tarefasParaIntervalo(
         dataInicialTarefasSelecionadas,
@@ -1496,22 +1610,38 @@ export default function GestaoLifeApp({
       )
     : []
   const dataDaNovaDespesa = new Date(`${dataDespesa}T12:00:00`)
+  const periodoDaDataDaNovaDespesa = obterPeriodoDoCicloFinanceiro(
+    diaFechamento,
+    dataDaNovaDespesa,
+  )
+  const inicioDoCicloDaNovaDespesa = formatarDataIso(
+    periodoDaDataDaNovaDespesa.inicio,
+  )
+  const fimDoCicloDaNovaDespesa = formatarDataIso(
+    periodoDaDataDaNovaDespesa.fim,
+  )
+  const despesasDoCicloDaNovaDespesa = despesas.filter(
+    (despesa) =>
+      despesa.data >= inicioDoCicloDaNovaDespesa &&
+      despesa.data <= fimDoCicloDaNovaDespesa,
+  )
   const padraoSelecionado = despesasPrevistas.find(
     (padrao) => padrao.id === padraoSelecionadoId,
   )
   const padraoDaNovaMeta = despesasPrevistas.find(
     (padrao) =>
-      normalizarNome(padrao.nome) === normalizarNome(despesaNovaMeta),
+      normalizarNome(padrao.nome) === normalizarNome(despesaNovaMeta) &&
+      padraoEstaVigenteEm(padrao, formatarDataIso(HOJE)),
   )
   const resumoDoPadraoSelecionado = padraoSelecionado
     ? (() => {
-        const despesasRegistradas = despesasDoCicloAtual.filter((despesa) =>
-          despesaPertenceAoPadrao(despesa, padraoSelecionado),
+        const despesasRegistradas = despesasDoCicloDaNovaDespesa.filter(
+          (despesa) => despesaPertenceAoPadrao(despesa, padraoSelecionado),
         )
         const totalPrevisto = obterTotalPrevistoNoPeriodo(
           padraoSelecionado,
-          inicioCicloIso,
-          fimCicloIso,
+          inicioDoCicloDaNovaDespesa,
+          fimDoCicloDaNovaDespesa,
           despesas,
         )
         const previsaoDoCiclo = padraoSelecionado.valor * totalPrevisto
@@ -1519,18 +1649,23 @@ export default function GestaoLifeApp({
           (total, despesa) => total + despesa.valor,
           0,
         )
+        const distribuicao = calcularDistribuicaoDoPadrao({
+          padrao: padraoSelecionado,
+          inicioPeriodoIso: inicioDoCicloDaNovaDespesa,
+          fimPeriodoIso: fimDoCicloDaNovaDespesa,
+          despesas,
+          dataReferenciaIso: formatarDataIso(HOJE),
+        })
         const valorDaNovaDespesa = Math.max(
           parseFloat(valorDespesa.replace(",", ".")) || 0,
           0,
         )
         return {
           previsaoDoCiclo,
-          aindaPrevisto:
-            padraoSelecionado.valor *
-            Math.max(totalPrevisto - despesasRegistradas.length, 0),
+          aindaPrevisto: padraoSelecionado.valor * distribuicao.disponiveis,
           gastoNoCiclo,
           gastoComNovaDespesa: gastoNoCiclo + valorDaNovaDespesa,
-          previsaoConcluida: despesasRegistradas.length >= totalPrevisto,
+          previsaoConcluida: distribuicao.disponiveis === 0,
         }
       })()
     : null
@@ -1580,9 +1715,9 @@ export default function GestaoLifeApp({
         {aba === "inicio" && (
           <TelaInicio
             nomeUsuario={nomeUsuario}
-            mesInsights={mesInsights}
-            gastosDoMes={gastosDoMesInsights}
-            diferencaPrevisao={diferencaPrevisao}
+            mesInsights={mesCalendario}
+            gastosDoMes={gastosDoMesCalendario}
+            diferencaPrevisao={diferencaDoMesDoCalendario}
             visao={visao}
             mesCalendario={mesCalendario}
             diaSelecionado={diaSelecionado}
@@ -1672,7 +1807,7 @@ export default function GestaoLifeApp({
             aoAbrirMeta={definirMetaAberta}
             aoEditarMeta={abrirEditarMeta}
             aoExcluirMeta={excluirMeta}
-            aoAbrirNota={definirNotaAberta}
+            aoAbrirNota={abrirNotaDoCalendario}
             aoAlternarFixacaoDaNota={alternarFixacaoDaNota}
           />
         )}
@@ -1693,6 +1828,8 @@ export default function GestaoLifeApp({
             aoAdicionarCartao={adicionarCartao}
             aoRenomearCartao={renomearCartao}
             aoRemoverCartao={removerCartao}
+            aoExportarDados={exportarDadosDaConta}
+            aoImportarDados={importarDadosDaConta}
             aoSair={aoSair}
           />
         )}
@@ -1899,6 +2036,7 @@ export default function GestaoLifeApp({
             onClick={(e) => {
               if (e.target === e.currentTarget) {
                 definirNotaAberta(null)
+                definirAgendamentoDaNotaAberto(false)
                 definirBlocoEditandoData(null)
               }
             }}
@@ -1912,6 +2050,7 @@ export default function GestaoLifeApp({
                 <button
                   onClick={() => {
                     definirNotaAberta(null)
+                    definirAgendamentoDaNotaAberto(false)
                     definirBlocoEditandoData(null)
                   }}
                   aria-label="Fechar"
@@ -1947,15 +2086,93 @@ export default function GestaoLifeApp({
                   {notaAberta.data &&
                     ` · vence ${formatarDataPorExtenso(notaAberta.data)}`}
                 </p>
-                <input
-                  type="text"
-                  value={notaAberta.titulo ?? ""}
-                  onChange={(e) => {
-                    const t = e.target.value
-                    atualizarNota((prev) => ({ ...prev, titulo: t }))
-                  }}
-                  className="w-full text-xl font-bold text-gray-950 outline-none bg-transparent mb-4"
-                />
+                <div className="mb-2 flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={notaAberta.titulo ?? ""}
+                    onChange={(e) => {
+                      const t = e.target.value
+                      atualizarNota((prev) => ({ ...prev, titulo: t }))
+                    }}
+                    className="min-w-0 flex-1 bg-transparent text-xl font-bold text-gray-950 outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!notaAberta.data)
+                        atualizarNota((prev) => ({
+                          ...prev,
+                          data: formatarDataIso(HOJE),
+                        }))
+                      definirAgendamentoDaNotaAberto((valor) => !valor)
+                    }}
+                    className={`rounded-xl p-2.5 ${
+                      notaAberta.data
+                        ? "bg-blue-50 text-[#1A56DB]"
+                        : "text-gray-500 hover:bg-gray-100"
+                    }`}
+                    aria-label="Definir data e hora para todos os checkboxes da nota"
+                  >
+                    <IconeRelogio tamanho={16} />
+                  </button>
+                </div>
+                {notaAberta.data && !agendamentoDaNotaAberto && (
+                  <div className="mb-3 flex items-center gap-2 text-[10px] font-medium text-[#1A56DB]">
+                    <span className="rounded-full bg-blue-50 px-2 py-1">
+                      Checkboxes ·{" "}
+                      {formatarDataTarefa(notaAberta.data, notaAberta.hora)}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        atualizarNota((prev) => ({
+                          ...prev,
+                          data: undefined,
+                          hora: undefined,
+                        }))
+                      }
+                      className="text-gray-500"
+                      aria-label="Remover data geral da nota"
+                    >
+                      <IconeFechar />
+                    </button>
+                  </div>
+                )}
+                {agendamentoDaNotaAberto && (
+                  <div className="mb-4 grid grid-cols-2 gap-2 rounded-2xl bg-gray-50 p-3">
+                    <input
+                      type="date"
+                      value={notaAberta.data ?? ""}
+                      onChange={(e) =>
+                        atualizarNota((prev) => ({
+                          ...prev,
+                          data: e.target.value || undefined,
+                          hora: e.target.value ? prev.hora : undefined,
+                        }))
+                      }
+                      className="rounded-xl bg-white px-3 py-2 text-xs outline-none"
+                    />
+                    <input
+                      type="time"
+                      value={notaAberta.hora ?? ""}
+                      disabled={!notaAberta.data}
+                      onChange={(e) =>
+                        atualizarNota((prev) => ({
+                          ...prev,
+                          hora: e.target.value || undefined,
+                        }))
+                      }
+                      className="rounded-xl bg-white px-3 py-2 text-xs outline-none disabled:opacity-40"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => definirAgendamentoDaNotaAberto(false)}
+                      className="col-span-2 rounded-xl bg-black py-2 text-xs font-bold text-white"
+                    >
+                      Confirmar
+                    </button>
+                  </div>
+                )}
 
                 {/* Block editor */}
                 <div className="space-y-0.5">
@@ -2223,7 +2440,10 @@ export default function GestaoLifeApp({
                                           x.id === bid
                                             ? {
                                                 ...x,
-                                                data: formatarDataIso(HOJE),
+                                                data:
+                                                  notaAberta.data ??
+                                                  formatarDataIso(HOJE),
+                                                hora: notaAberta.hora,
                                               }
                                             : x,
                                         ),
@@ -2390,25 +2610,89 @@ export default function GestaoLifeApp({
 
               <div className="flex-1 overflow-y-auto px-5 pb-6 space-y-4">
                 {/* Título */}
-                <input
-                  ref={campoTituloNovaNotaRef}
-                  type="text"
-                  autoFocus
-                  value={tituloNovaNota}
-                  onChange={(e) => definirTituloNovaNota(e.target.value)}
-                  placeholder="Título"
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault()
-                      const firstBlocoId = blocosNovaNota[0]?.id
-                      if (firstBlocoId)
-                        (document.getElementById(
-                          `nb-${firstBlocoId}`,
-                        ) as HTMLInputElement)?.focus()
-                    }
-                  }}
-                  className="w-full text-xl font-bold text-gray-950 outline-none placeholder:text-gray-200 bg-transparent"
-                />
+                <div className="flex items-center gap-2">
+                  <input
+                    ref={campoTituloNovaNotaRef}
+                    type="text"
+                    autoFocus
+                    value={tituloNovaNota}
+                    onChange={(e) => definirTituloNovaNota(e.target.value)}
+                    placeholder="Título"
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault()
+                        const firstBlocoId = blocosNovaNota[0]?.id
+                        if (firstBlocoId)
+                          (document.getElementById(
+                            `nb-${firstBlocoId}`,
+                          ) as HTMLInputElement)?.focus()
+                      }
+                    }}
+                    className="min-w-0 flex-1 bg-transparent text-xl font-bold text-gray-950 outline-none placeholder:text-gray-200"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!dataNovaNota)
+                        definirDataNovaNota(formatarDataIso(HOJE))
+                      definirAgendamentoDaNovaNotaAberto((valor) => !valor)
+                    }}
+                    className={`rounded-xl p-2.5 ${
+                      dataNovaNota
+                        ? "bg-blue-50 text-[#1A56DB]"
+                        : "text-gray-500 hover:bg-gray-100"
+                    }`}
+                    aria-label="Definir data e hora para todos os checkboxes da nota"
+                  >
+                    <IconeRelogio tamanho={16} />
+                  </button>
+                </div>
+                {dataNovaNota && !agendamentoDaNovaNotaAberto && (
+                  <div className="flex items-center gap-2 text-[10px] font-medium text-[#1A56DB]">
+                    <span className="rounded-full bg-blue-50 px-2 py-1">
+                      Checkboxes ·{" "}
+                      {formatarDataTarefa(dataNovaNota, horaNovaNota)}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        definirDataNovaNota("")
+                        definirHoraNovaNota("")
+                      }}
+                      className="text-gray-500"
+                      aria-label="Remover data geral da nota"
+                    >
+                      <IconeFechar />
+                    </button>
+                  </div>
+                )}
+                {agendamentoDaNovaNotaAberto && (
+                  <div className="grid grid-cols-2 gap-2 rounded-2xl bg-gray-50 p-3">
+                    <input
+                      type="date"
+                      value={dataNovaNota}
+                      onChange={(e) => {
+                        definirDataNovaNota(e.target.value)
+                        if (!e.target.value) definirHoraNovaNota("")
+                      }}
+                      className="rounded-xl bg-white px-3 py-2 text-xs outline-none"
+                    />
+                    <input
+                      type="time"
+                      value={horaNovaNota}
+                      disabled={!dataNovaNota}
+                      onChange={(e) => definirHoraNovaNota(e.target.value)}
+                      className="rounded-xl bg-white px-3 py-2 text-xs outline-none disabled:opacity-40"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => definirAgendamentoDaNovaNotaAberto(false)}
+                      className="col-span-2 rounded-xl bg-black py-2 text-xs font-bold text-white"
+                    >
+                      Confirmar
+                    </button>
+                  </div>
+                )}
 
                 {/* Block editor */}
                 <div className="space-y-0.5">
@@ -2642,7 +2926,9 @@ export default function GestaoLifeApp({
                                       blocoEditandoData !== b.id
                                     if (abrindoSeletor && !b.data)
                                       atualizarBlocoDaNovaNota(b.id, {
-                                        data: formatarDataIso(HOJE),
+                                        data:
+                                          dataNovaNota || formatarDataIso(HOJE),
+                                        hora: horaNovaNota || undefined,
                                       })
                                     definirBlocoEditandoData(
                                       abrindoSeletor ? b.id : null,
@@ -2882,7 +3168,9 @@ export default function GestaoLifeApp({
                             definirUsarPadraoNaNovaMeta(usarPadrao)
                             definirErroNovaMeta("")
                             if (!usarPadrao && padraoDaNovaMeta) {
-                              definirValorNovaMeta(String(padraoDaNovaMeta.valor))
+                              definirValorNovaMeta(
+                                String(padraoDaNovaMeta.valor),
+                              )
                               definirFrequenciaNovaMeta(
                                 String(
                                   obterFrequenciaMensalDoPadrao(
@@ -2912,11 +3200,18 @@ export default function GestaoLifeApp({
                             className="w-full bg-transparent text-sm font-medium outline-none text-gray-900"
                           >
                             <option value="">Selecione um padrão</option>
-                            {despesasPrevistas.map((padrao) => (
-                              <option key={padrao.id} value={padrao.nome}>
-                                {padrao.nome}
-                              </option>
-                            ))}
+                            {despesasPrevistas
+                              .filter((padrao) =>
+                                padraoEstaVigenteEm(
+                                  padrao,
+                                  formatarDataIso(HOJE),
+                                ),
+                              )
+                              .map((padrao) => (
+                                <option key={padrao.id} value={padrao.nome}>
+                                  {padrao.nome}
+                                </option>
+                              ))}
                           </select>
                         ) : (
                           <input
@@ -2972,7 +3267,10 @@ export default function GestaoLifeApp({
                 </div>
 
                 {erroNovaMeta && (
-                  <p role="alert" className="px-1 text-xs font-medium text-red-600">
+                  <p
+                    role="alert"
+                    className="px-1 text-xs font-medium text-red-600"
+                  >
                     {erroNovaMeta}
                   </p>
                 )}
@@ -3252,7 +3550,9 @@ export default function GestaoLifeApp({
                       {sugestoes.slice(0, 4).map((s) => {
                         const chave = normalizarNome(s)
                         const prev = despesasPrevistas.find(
-                          (p) => normalizarNome(p.nome) === chave,
+                          (p) =>
+                            normalizarNome(p.nome) === chave &&
+                            padraoEstaVigenteEm(p, dataDespesa),
                         )
                         const ref = [...despesas]
                           .filter((d) => normalizarNome(d.nome) === chave)
@@ -3382,8 +3682,8 @@ export default function GestaoLifeApp({
                               String(
                                 obterTotalPrevistoNoPeriodo(
                                   padraoSelecionado,
-                                  inicioCicloIso,
-                                  fimCicloIso,
+                                  inicioDoCicloDaNovaDespesa,
+                                  fimDoCicloDaNovaDespesa,
                                   despesas,
                                 ),
                               ),
@@ -3472,21 +3772,14 @@ export default function GestaoLifeApp({
                   </div>
                 )}
                 {!padraoSelecionado && recorrencia === "personalizada" && (
-                  <div className="flex items-center bg-gray-100 rounded-2xl px-4 py-3.5 gap-2">
-                    <span className="text-sm text-gray-600 font-medium flex-1">
-                      Quantas vezes no ciclo?
-                    </span>
-                    <input
-                      type="number"
-                      min="1"
-                      value={ocorrenciasPersonalizadas}
-                      onChange={(e) => {
-                        definirOcorrenciasPersonalizadas(e.target.value)
-                        definirErroNovaDespesa("")
-                      }}
-                      className="w-14 bg-transparent text-sm outline-none text-right font-bold text-gray-900"
-                    />
-                  </div>
+                  <SeletorDeQuantidade
+                    rotulo="Quantas vezes no ciclo?"
+                    valor={ocorrenciasPersonalizadas}
+                    aoAlterar={(valor) => {
+                      definirOcorrenciasPersonalizadas(valor)
+                      definirErroNovaDespesa("")
+                    }}
+                  />
                 )}
                 {resumoDoPadraoSelecionado && (
                   <div className="rounded-2xl border border-gray-100 bg-gray-50 p-3">
@@ -3506,6 +3799,16 @@ export default function GestaoLifeApp({
                       </div>
                       <div className="min-h-[62px] rounded-xl bg-white px-2 py-2.5 text-center">
                         <p className="text-[9px] leading-tight text-gray-500">
+                          Ainda previsto
+                        </p>
+                        <p className="mt-1 text-xs font-extrabold text-orange-600">
+                          {formatarMoeda(
+                            resumoDoPadraoSelecionado.aindaPrevisto,
+                          )}
+                        </p>
+                      </div>
+                      <div className="min-h-[62px] rounded-xl bg-white px-2 py-2.5 text-center">
+                        <p className="text-[9px] leading-tight text-gray-500">
                           Já gasto
                         </p>
                         <p
@@ -3518,16 +3821,6 @@ export default function GestaoLifeApp({
                         >
                           {formatarMoeda(
                             resumoDoPadraoSelecionado.gastoNoCiclo,
-                          )}
-                        </p>
-                      </div>
-                      <div className="min-h-[62px] rounded-xl bg-white px-2 py-2.5 text-center">
-                        <p className="text-[9px] leading-tight text-gray-500">
-                          Ainda previsto
-                        </p>
-                        <p className="mt-1 text-xs font-extrabold text-orange-600">
-                          {formatarMoeda(
-                            resumoDoPadraoSelecionado.aindaPrevisto,
                           )}
                         </p>
                       </div>
@@ -3553,22 +3846,32 @@ export default function GestaoLifeApp({
                 )}
                 {!padraoSelecionado &&
                   recorrencia !== "avulsa" &&
-                  valorProjecaoDaDespesa > 0 && (
+                  previsaoDaNovaDespesa && (
                     <div className="bg-gray-50 border border-gray-100 rounded-2xl p-4">
                       <p className="text-[11px] text-gray-600 font-semibold uppercase tracking-widest mb-1">
-                        Projeção até dia {diaFechamento}
+                        Previsão do ciclo
                       </p>
                       <p className="text-2xl font-bold text-gray-900">
-                        {formatarMoeda(valorProjecaoDaDespesa)}
+                        {formatarMoeda(previsaoDaNovaDespesa.valorDoCiclo)}
                       </p>
                       <p className="text-xs text-gray-600 mt-1">
-                        {recorrencia === "diaria" &&
-                          `${periodoFinanceiroAtual.diasRestantes} ocorrências previstas`}
-                        {recorrencia === "semanal" &&
-                          `${Math.ceil(periodoFinanceiroAtual.diasRestantes / 7)} ocorrências previstas`}
-                        {recorrencia === "mensal" && "1 ocorrência prevista"}
-                        {recorrencia === "personalizada" &&
-                          `${ocorrenciasPersonalizadas} ocorrência(s) prevista(s)`}
+                        {previsaoDaNovaDespesa.total}{" "}
+                        {previsaoDaNovaDespesa.total === 1
+                          ? "ocorrência prevista"
+                          : "ocorrências previstas"}
+                      </p>
+                      <div className="mt-3 border-t border-gray-200 pt-3">
+                        <p className="text-[10px] font-semibold uppercase tracking-widest text-gray-500">
+                          Após esta despesa
+                        </p>
+                        <p className="mt-0.5 text-sm font-bold text-orange-600">
+                          {formatarMoeda(previsaoDaNovaDespesa.valorRestante)} ·{" "}
+                          {previsaoDaNovaDespesa.restantesAposEsta} disponíveis
+                        </p>
+                      </div>
+                      <p className="mt-2 text-[10px] leading-4 text-gray-500">
+                        Considera o ciclo completo, inclusive ocorrências
+                        anteriores ainda não registradas.
                       </p>
                     </div>
                   )}
@@ -4065,12 +4368,9 @@ export default function GestaoLifeApp({
                       style={{ backgroundColor: COR_RESTANTE }}
                     />
                     <span className="text-xs text-gray-500 font-medium">
-                      Restante
+                      Ainda previsto
                     </span>
                   </div>
-                  <p className="ml-auto text-[10px] text-gray-600">
-                    Edite o padrão aqui
-                  </p>
                 </div>
               </div>
               {/* fim header fixo */}
@@ -4157,38 +4457,34 @@ export default function GestaoLifeApp({
                             const padraoAtual = despesasPrevistas.find(
                               (padrao) => padrao.id === g.id,
                             )
+                            const padraoEditado: DespesaPrevista = {
+                              id: g.id,
+                              nome: nomePrevisaoEmEdicao,
+                              dataInicio: padraoAtual?.dataInicio,
+                              vigenteDesde: padraoAtual?.vigenteDesde,
+                              vigenteAte: padraoAtual?.vigenteAte,
+                              valor: v,
+                              recorrencia: recorrenciaPrevisaoEmEdicao,
+                              ocorrenciasPorCiclo:
+                                recorrenciaPrevisaoEmEdicao === "personalizada"
+                                  ? customOcc
+                                  : undefined,
+                              restantes: customOcc,
+                            }
                             const occ = obterTotalPrevistoNoPeriodo(
-                              {
-                                id: g.id,
-                                nome: nomePrevisaoEmEdicao,
-                                dataInicio: padraoAtual?.dataInicio,
-                                valor: v,
-                                recorrencia: recorrenciaPrevisaoEmEdicao,
-                                ocorrenciasPorCiclo:
-                                  recorrenciaPrevisaoEmEdicao ===
-                                  "personalizada"
-                                    ? customOcc
-                                    : undefined,
-                                restantes: customOcc,
-                              },
-                              inicioCicloIso,
-                              fimCicloIso,
+                              padraoEditado,
+                              inicioPeriodoInsightsIso,
+                              fimPeriodoInsightsIso,
                               despesas,
                             )
-                            const usadasNoPadraoEditado =
-                              despesasDoPeriodoInsights.filter((despesa) =>
-                                padraoAtual
-                                  ? despesaPertenceAoPadrao(
-                                      despesa,
-                                      padraoAtual,
-                                    )
-                                  : normalizarNome(despesa.nome) ===
-                                    normalizarNome(g.nome),
-                              ).length
-                            const ocorrenciasRestantes = Math.max(
-                              occ - usadasNoPadraoEditado,
-                              0,
-                            )
+                            const ocorrenciasRestantes =
+                              calcularDistribuicaoDoPadrao({
+                                padrao: padraoEditado,
+                                inicioPeriodoIso: inicioPeriodoInsightsIso,
+                                fimPeriodoIso: fimPeriodoInsightsIso,
+                                despesas,
+                                dataReferenciaIso: formatarDataIso(HOJE),
+                              }).restantes
                             const proj = v * ocorrenciasRestantes
                             return (
                               <div className="space-y-4">
@@ -4316,23 +4612,13 @@ export default function GestaoLifeApp({
                                 {/* Campo de ocorrências para personalizada */}
                                 {recorrenciaPrevisaoEmEdicao ===
                                   "personalizada" && (
-                                  <div className="flex items-center gap-3 bg-gray-100 rounded-2xl px-4 py-3.5">
-                                    <span className="text-sm text-gray-500 font-semibold shrink-0">
-                                      Ocorrências por ciclo
-                                    </span>
-                                    <input
-                                      type="number"
-                                      inputMode="numeric"
-                                      min="1"
-                                      value={ocorrenciasPersonalizadasPrevisao}
-                                      onChange={(e) =>
-                                        definirOcorrenciasPersonalizadasPrevisao(
-                                          e.target.value,
-                                        )
-                                      }
-                                      className="flex-1 bg-transparent text-sm outline-none font-bold text-right text-gray-900 w-0"
-                                    />
-                                  </div>
+                                  <SeletorDeQuantidade
+                                    rotulo="Ocorrências por ciclo"
+                                    valor={ocorrenciasPersonalizadasPrevisao}
+                                    aoAlterar={
+                                      definirOcorrenciasPersonalizadasPrevisao
+                                    }
+                                  />
                                 )}
 
                                 {occ > 0 && (
@@ -4392,32 +4678,48 @@ export default function GestaoLifeApp({
                                   {ROTULOS_RECORRENCIA[g.recorrencia]} ·{" "}
                                   {formatarMoeda(g.valor)}/vez
                                 </p>
+                                {g.excluidoEm && (
+                                  <span className="mt-1 inline-flex rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-semibold text-gray-600">
+                                    Excluído em{" "}
+                                    {new Date(
+                                      `${g.excluidoEm}T12:00:00`,
+                                    ).toLocaleDateString("pt-BR")}
+                                  </span>
+                                )}
                               </div>
                               <div className="flex items-center gap-1.5 shrink-0 ml-3">
-                                {g.disponiveis > 0 && (
-                                  <div className="text-right">
-                                    <p className="text-sm font-bold text-gray-900">
-                                      {formatarMoeda(g.projecaoValor)}
-                                    </p>
-                                    <p className="text-[10px] text-orange-600 font-medium">
-                                      projeção
-                                    </p>
-                                  </div>
+                                <div className="text-right">
+                                  <p className="text-sm font-bold text-gray-900">
+                                    {formatarMoeda(g.valorTotalCiclo)}
+                                  </p>
+                                  <p className="text-[10px] font-medium text-gray-500">
+                                    projeção do ciclo
+                                  </p>
+                                  <p className="mt-1 text-xs font-bold text-orange-600">
+                                    {formatarMoeda(g.projecaoValor)}
+                                  </p>
+                                  <p className="text-[9px] font-medium text-orange-600">
+                                    gasto restante projetado
+                                  </p>
+                                </div>
+                                {!g.excluidoEm && (
+                                  <>
+                                    <button
+                                      onClick={() => iniciarEdicaoDaPrevisao(g)}
+                                      aria-label="Editar previsão"
+                                      className="p-2.5 text-gray-500 hover:text-gray-700 transition-colors rounded-xl hover:bg-gray-100"
+                                    >
+                                      <IconeEditar />
+                                    </button>
+                                    <button
+                                      onClick={() => excluirPrevisao(g.id)}
+                                      aria-label="Excluir previsão"
+                                      className="p-2.5 text-gray-500 hover:text-red-500 transition-colors rounded-xl hover:bg-red-50"
+                                    >
+                                      <IconeLixeira />
+                                    </button>
+                                  </>
                                 )}
-                                <button
-                                  onClick={() => iniciarEdicaoDaPrevisao(g)}
-                                  aria-label="Editar previsão"
-                                  className="p-2.5 text-gray-500 hover:text-gray-700 transition-colors rounded-xl hover:bg-gray-100"
-                                >
-                                  <IconeEditar />
-                                </button>
-                                <button
-                                  onClick={() => excluirPrevisao(g.id)}
-                                  aria-label="Excluir previsão"
-                                  className="p-2.5 text-gray-500 hover:text-red-500 transition-colors rounded-xl hover:bg-red-50"
-                                >
-                                  <IconeLixeira />
-                                </button>
                               </div>
                             </div>
                             <div className="mt-3">
@@ -4443,13 +4745,14 @@ export default function GestaoLifeApp({
                                   className="text-[10px] font-semibold"
                                   style={{ color: "#5B9BD5" }}
                                 >
-                                  {g.restantes}x restante
-                                  {g.restantes !== 1 ? "s" : ""}
+                                  {g.restantes}x ainda previsto
                                 </span>
                                 <span className="text-right text-[10px] font-semibold text-gray-600">
                                   {g.totalPrevisto} total
                                   {g.excedentes > 0
-                                    ? ` · ${g.excedentes} extra${g.excedentes !== 1 ? "s" : ""}`
+                                    ? ` · ${g.excedentes} extra${
+                                        g.excedentes !== 1 ? "s" : ""
+                                      }`
                                     : ""}
                                 </span>
                               </div>
@@ -4459,11 +4762,24 @@ export default function GestaoLifeApp({
                       </div>
                     ))}
                     <div className="border border-gray-200 rounded-2xl p-4 bg-gray-50">
-                      <div className="flex items-center justify-between">
+                      <div className="flex items-center justify-between border-b border-gray-200 pb-2">
                         <span className="text-sm text-gray-500 font-medium">
                           Total projetado
                         </span>
                         <span className="text-base font-bold text-gray-900">
+                          {formatarMoeda(
+                            gruposProjecao.reduce(
+                              (a, g) => a + g.valorTotalCiclo,
+                              0,
+                            ),
+                          )}
+                        </span>
+                      </div>
+                      <div className="mt-2 flex items-center justify-between">
+                        <span className="text-sm font-medium text-orange-700">
+                          Total de gasto restante projetado
+                        </span>
+                        <span className="text-base font-bold text-orange-700">
                           {formatarMoeda(
                             gruposProjecao.reduce(
                               (a, g) => a + g.projecaoValor,

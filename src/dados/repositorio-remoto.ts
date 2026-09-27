@@ -37,7 +37,7 @@ function mesDaDespesa(despesa: Despesa) {
   return /^\d{4}-\d{2}/.exec(despesa.data)?.[0] ?? "sem-data"
 }
 
-function separarEmBlocos(dados: DadosDoUsuario) {
+export function separarEmBlocos(dados: DadosDoUsuario) {
   const blocos = new Map<string, unknown>()
   blocos.set("configuracoes", {
     nomeUsuario: dados.nomeUsuario,
@@ -144,5 +144,46 @@ export function salvarDadosDoUsuario(usuarioId: string, dados: DadosDoUsuario) {
   filaDeSalvamento = filaDeSalvamento
     .catch(() => undefined)
     .then(() => executarSalvamento(usuarioId, dados))
+  return filaDeSalvamento
+}
+
+export function substituirDadosDoUsuario(
+  usuarioId: string,
+  dados: DadosDoUsuario,
+) {
+  filaDeSalvamento = filaDeSalvamento
+    .catch(() => undefined)
+    .then(async () => {
+      const blocosAbertos = separarEmBlocos(dados)
+      const revisoesEsperadas = Object.fromEntries(
+        [...tiposConhecidos].map((tipo) => [
+          tipo,
+          revisoes.get(chaveDaRevisao(usuarioId, tipo)) ?? 0,
+        ]),
+      )
+      const blocos = []
+      for (const [tipo, conteudoAberto] of blocosAbertos) {
+        const novaRevisao = Number(revisoesEsperadas[tipo] ?? 0) + 1
+        const criptografado = await criptografarBloco(
+          usuarioId,
+          tipo,
+          novaRevisao,
+          conteudoAberto,
+        )
+        blocos.push({ tipo, ...criptografado })
+      }
+      const resposta = await requisitarApi<{
+        revisoes: Record<string, number>
+      }>("/api/blocos/importacao", {
+        method: "POST",
+        body: JSON.stringify({ revisoesEsperadas, blocos }),
+      })
+      revisoes.clear()
+      tiposConhecidos.clear()
+      for (const [tipo, revisao] of Object.entries(resposta.revisoes)) {
+        revisoes.set(chaveDaRevisao(usuarioId, tipo), revisao)
+        tiposConhecidos.add(tipo)
+      }
+    })
   return filaDeSalvamento
 }

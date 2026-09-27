@@ -115,7 +115,7 @@ export default function TelaInsights({
           {statusPeriodo !== "atual" && (
             <button
               onClick={aoIrParaMesAtual}
-              className="ml-auto text-xs font-semibold px-3 py-1.5 rounded-full border border-gray-200 hover:bg-gray-50 transition-colors"
+              className="ml-auto rounded-full bg-[#DBEAFE] px-3 py-1.5 text-xs font-semibold text-[#1D4ED8] transition-colors hover:bg-[#BFDBFE]"
             >
               Mês atual
             </button>
@@ -216,7 +216,7 @@ export default function TelaInsights({
             {!ehSemanaAtual(semana) && (
               <button
                 onClick={aoIrParaSemanaAtual}
-                className="text-[10px] font-semibold px-2.5 py-1 rounded-full border border-gray-200 hover:bg-gray-50 transition-colors text-gray-500"
+                className="rounded-full bg-[#DBEAFE] px-2.5 py-1 text-[10px] font-semibold text-[#1D4ED8] transition-colors hover:bg-[#BFDBFE]"
               >
                 Semana atual
               </button>

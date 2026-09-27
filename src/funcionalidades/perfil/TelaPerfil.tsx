@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import AvatarIniciais from "../../componentes/AvatarIniciais"
 import {
   IconeConfirmar,
@@ -24,6 +24,8 @@ interface PropriedadesTelaPerfil {
   aoAdicionarCartao: (nome: string) => void
   aoRenomearCartao: (cartaoId: number, novoNome: string) => void
   aoRemoverCartao: (cartaoId: number) => void
+  aoExportarDados: () => void
+  aoImportarDados: (arquivo: File) => Promise<void>
   aoSair: () => void
 }
 
@@ -41,6 +43,8 @@ export default function TelaPerfil({
   aoAdicionarCartao,
   aoRenomearCartao,
   aoRemoverCartao,
+  aoExportarDados,
+  aoImportarDados,
   aoSair,
 }: PropriedadesTelaPerfil) {
   const [editandoNome, definirEditandoNome] = useState(false)
@@ -52,6 +56,9 @@ export default function TelaPerfil({
   const [cartaoEmEdicao, definirCartaoEmEdicao] = useState<number | null>(null)
   const [nomeCartaoTemporario, definirNomeCartaoTemporario] = useState("")
   const [administracaoAberta, definirAdministracaoAberta] = useState(false)
+  const [importandoDados, definirImportandoDados] = useState(false)
+  const [mensagemDosDados, definirMensagemDosDados] = useState("")
+  const campoDeImportacaoRef = useRef<HTMLInputElement>(null)
   const periodoDoCiclo = obterPeriodoDoCicloFinanceiro(diaFechamento)
 
   useEffect(() => {
@@ -417,6 +424,74 @@ export default function TelaPerfil({
                 </div>
               ))}
             </div>
+          )}
+        </div>
+
+        <div className="rounded-2xl border border-white/60 bg-white/80 p-4 shadow-sm backdrop-blur-sm">
+          <p className="text-sm font-semibold text-gray-900">Seus dados</p>
+          <p className="mt-1 text-xs leading-5 text-gray-600">
+            Exporte uma cópia legível ou substitua os dados desta conta por uma
+            exportação anterior.
+          </p>
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                if (
+                  window.confirm(
+                    "O arquivo exportado será descriptografado e poderá ser lido por qualquer pessoa que tiver acesso a ele. Deseja continuar?",
+                  )
+                )
+                  aoExportarDados()
+              }}
+              className="rounded-xl bg-blue-50 px-3 py-3 text-sm font-bold text-[#1A56DB]"
+            >
+              Exportar dados
+            </button>
+            <button
+              type="button"
+              disabled={importandoDados}
+              onClick={() => campoDeImportacaoRef.current?.click()}
+              className="rounded-xl bg-gray-100 px-3 py-3 text-sm font-bold text-gray-700 disabled:opacity-50"
+            >
+              {importandoDados ? "Importando..." : "Importar dados"}
+            </button>
+          </div>
+          <input
+            ref={campoDeImportacaoRef}
+            type="file"
+            accept="application/json,.json"
+            className="hidden"
+            onChange={async (evento) => {
+              const arquivo = evento.target.files?.[0]
+              evento.target.value = ""
+              if (!arquivo) return
+              if (
+                !window.confirm(
+                  "A importação substituirá todos os dados atuais desta conta. Os dados antigos serão perdidos e esta ação não pode ser desfeita. Deseja continuar?",
+                )
+              )
+                return
+              definirImportandoDados(true)
+              definirMensagemDosDados("")
+              try {
+                await aoImportarDados(arquivo)
+                definirMensagemDosDados("Dados importados com sucesso.")
+              } catch (erro) {
+                definirMensagemDosDados(
+                  erro instanceof Error
+                    ? erro.message
+                    : "Não foi possível importar os dados.",
+                )
+              } finally {
+                definirImportandoDados(false)
+              }
+            }}
+          />
+          {mensagemDosDados && (
+            <p className="mt-3 rounded-xl bg-gray-50 px-3 py-2 text-xs font-medium text-gray-700">
+              {mensagemDosDados}
+            </p>
           )}
         </div>
 

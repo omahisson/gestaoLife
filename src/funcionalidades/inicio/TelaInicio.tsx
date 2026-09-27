@@ -105,6 +105,13 @@ export default function TelaInicio({
   )
   const diasDoMes = obterDiasDoMes(mesCalendario)
   const diasDaSemana = obterDiasDaSemana(diaSelecionado)
+  const estaNoHoje =
+    visao === "mensal"
+      ? mesCalendario.getFullYear() === HOJE.getFullYear() &&
+        mesCalendario.getMonth() === HOJE.getMonth() &&
+        !inicioIntervalo &&
+        !fimIntervalo
+      : formatarDataIso(diaSelecionado) === formatarDataIso(HOJE)
 
   function calcularTotalPorData(data: string) {
     return despesas
@@ -174,7 +181,7 @@ export default function TelaInicio({
               {diferencaPrevisao > 0
                 ? `↑ ${formatarMoeda(Math.abs(diferencaPrevisao))} acima da previsão`
                 : diferencaPrevisao < 0
-                  ? `↓ ${formatarMoeda(Math.abs(diferencaPrevisao))} abaixo`
+                  ? `↓ ${formatarMoeda(Math.abs(diferencaPrevisao))} abaixo da previsão`
                   : "Dentro da previsão"}
             </p>
           )}
@@ -212,7 +219,12 @@ export default function TelaInicio({
             </div>
             <button
               onClick={aoIrParaHoje}
-              className="ml-auto text-xs font-semibold px-3 py-1.5 rounded-full bg-[#DBEAFE] hover:bg-[#BFDBFE] transition-colors text-[#1D4ED8]"
+              disabled={estaNoHoje}
+              className={`ml-auto rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${
+                estaNoHoje
+                  ? "cursor-default bg-gray-100 text-gray-400"
+                  : "bg-[#DBEAFE] text-[#1D4ED8] hover:bg-[#BFDBFE]"
+              }`}
             >
               Hoje
             </button>
@@ -370,7 +382,9 @@ function CalendarioMensal({
           const estaDentro = estaNoIntervalo(dia)
           const total = calcularTotalPorData(data)
           const estaSelecionado =
-            !inicioIntervalo && data === formatarDataIso(diaSelecionado)
+            !!inicioIntervalo &&
+            !fimIntervalo &&
+            data === formatarDataIso(diaSelecionado)
           const quantidadeTarefas = contarTarefasPorData(data)
 
           return (
@@ -474,9 +488,9 @@ function CalendarioSemanal({
                   ? "bg-[#DBEAFE] text-[#1A56DB] font-bold ring-1 ring-[#1A56DB]/30"
                   : estaSelecionado
                     ? "bg-[#1A56DB] text-white"
-                  : ehHoje
-                    ? "text-[#1A56DB] font-bold"
-                    : "text-gray-700"
+                    : ehHoje
+                      ? "text-[#1A56DB] font-bold"
+                      : "text-gray-700"
               }`}
             >
               {dia.getDate()}

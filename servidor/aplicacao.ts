@@ -72,7 +72,7 @@ function respostaDoUsuario(sessao: SessaoValida) {
   }
 }
 
-function validarTextoBase64(valor: unknown, maximo = 2_000_000) {
+function validarTextoBase64(valor: unknown, maximo = 15 * 1024 * 1024) {
   return (
     typeof valor === "string" &&
     valor.length > 0 &&
@@ -224,7 +224,9 @@ export async function construirAplicacao({
 }: OpcoesDaAplicacao): Promise<FastifyInstance> {
   const aplicacao = Fastify({
     logger: producao,
-    bodyLimit: 2_000_000,
+    // Uma exportação aberta de até 10 MiB cresce ao ser novamente
+    // criptografada e codificada em base64 durante a importação.
+    bodyLimit: 20 * 1024 * 1024,
     trustProxy: producao,
   })
   await aplicacao.register(cookie)
@@ -508,6 +510,86 @@ export async function construirAplicacao({
     },
   )
 
+  aplicacao.post("/api/blocos/importacao", async (requisicao, resposta) => {
+    const sessao = exigirMutacaoAutenticada(banco, requisicao, resposta)
+    if (!sessao) return
+    const corpo = requisicao.body as {
+      revisoesEsperadas?: unknown
+      blocos?: unknown
+    }
+    if (
+      !corpo.revisoesEsperadas ||
+      typeof corpo.revisoesEsperadas !== "object" ||
+      !Array.isArray(corpo.blocos) ||
+      corpo.blocos.length > 2_000
+    )
+      return resposta.code(400).send({ erro: "Importação inválida." })
+
+    const revisoesEsperadas = corpo.revisoesEsperadas as Record<string, unknown>
+    const blocos = corpo.blocos as Array<Record<string, unknown>>
+    const tiposRecebidos = new Set<string>()
+    for (const bloco of blocos) {
+      if (
+        typeof bloco.tipo !== "string" ||
+        !/^[a-z0-9:-]{1,80}$/.test(bloco.tipo) ||
+        tiposRecebidos.has(bloco.tipo) ||
+        !validarTextoBase64(bloco.nonce, 256) ||
+        !validarTextoBase64(bloco.conteudo)
+      )
+        return resposta.code(400).send({ erro: "Bloco importado inválido." })
+      tiposRecebidos.add(bloco.tipo)
+    }
+
+    const atuais = banco
+      .prepare(
+        "SELECT tipo_bloco AS tipo, revisao FROM blocos_criptografados WHERE usuario_id = ?",
+      )
+      .all(sessao.usuarioId) as unknown as Array<{
+      tipo: string
+      revisao: number
+    }>
+    if (
+      Object.keys(revisoesEsperadas).length !== atuais.length ||
+      atuais.some(
+        ({ tipo, revisao }) =>
+          !Number.isSafeInteger(revisoesEsperadas[tipo]) ||
+          revisoesEsperadas[tipo] !== revisao,
+      )
+    )
+      return resposta
+        .code(409)
+        .send({ erro: "Os dados foram alterados em outra sessão." })
+
+    const revisoesNovas: Record<string, number> = {}
+    banco.exec("BEGIN IMMEDIATE")
+    try {
+      banco
+        .prepare("DELETE FROM blocos_criptografados WHERE usuario_id = ?")
+        .run(sessao.usuarioId)
+      const inserir = banco.prepare(`
+        INSERT INTO blocos_criptografados
+          (usuario_id, tipo_bloco, revisao, nonce, conteudo)
+        VALUES (?, ?, ?, ?, ?)
+      `)
+      for (const bloco of blocos) {
+        const revisao = Number(revisoesEsperadas[String(bloco.tipo)] ?? 0) + 1
+        inserir.run(
+          sessao.usuarioId,
+          String(bloco.tipo),
+          revisao,
+          String(bloco.nonce),
+          String(bloco.conteudo),
+        )
+        revisoesNovas[String(bloco.tipo)] = revisao
+      }
+      banco.exec("COMMIT")
+    } catch (erro) {
+      banco.exec("ROLLBACK")
+      throw erro
+    }
+    return resposta.send({ revisoes: revisoesNovas })
+  })
+
   aplicacao.get("/api/admin/usuarios", async (requisicao, resposta) => {
     if (!exigirAdministrador(banco, requisicao, resposta)) return
     const usuarios = banco
@@ -644,7 +726,9 @@ export async function construirAplicacao({
           .code(400)
           .send({ erro: "A conta atual não pode ser excluída." })
       }
-      banco.prepare("DELETE FROM usuarios WHERE id = ?").run(requisicao.params.id)
+      banco
+        .prepare("DELETE FROM usuarios WHERE id = ?")
+        .run(requisicao.params.id)
       return resposta.code(204).send()
     },
   )

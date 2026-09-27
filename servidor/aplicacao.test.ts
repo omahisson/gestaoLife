@@ -195,6 +195,84 @@ test("impede sobrescrita de uma revisão desatualizada", async () => {
   banco.close()
 })
 
+test("importa os blocos da conta de forma atômica", async () => {
+  const banco = abrirBanco(":memory:")
+  const senha = "senha-de-importacao"
+  const senhaHash = await protegerSenha(senha)
+  inserirUsuario(
+    banco,
+    { id: "usuario-importacao", login: "importador", perfil: "usuario" },
+    senhaHash,
+  )
+  const api = await construirAplicacao({ banco })
+  const login = await api.inject({
+    method: "POST",
+    url: "/api/sessao",
+    payload: { login: "importador", senha },
+  })
+  const headers = {
+    cookie: cookieDaResposta(login.headers["set-cookie"]),
+    "x-csrf-token": login.json().csrfToken as string,
+  }
+
+  for (const tipo of ["configuracoes", "metas"]) {
+    const resposta = await api.inject({
+      method: "PUT",
+      url: `/api/blocos/${tipo}`,
+      headers,
+      payload: {
+        revisaoEsperada: 0,
+        nonce: "bm9uY2U=",
+        conteudo: "YW50aWdv",
+      },
+    })
+    assert.equal(resposta.statusCode, 200)
+  }
+
+  const importacao = await api.inject({
+    method: "POST",
+    url: "/api/blocos/importacao",
+    headers,
+    payload: {
+      revisoesEsperadas: { configuracoes: 1, metas: 1 },
+      blocos: [
+        {
+          tipo: "notas:0001",
+          nonce: "bm9uY2U=",
+          conteudo: "bm92bw==",
+        },
+      ],
+    },
+  })
+  assert.equal(importacao.statusCode, 200)
+  assert.deepEqual(importacao.json(), { revisoes: { "notas:0001": 1 } })
+
+  const blocos = await api.inject({
+    method: "GET",
+    url: "/api/blocos",
+    headers,
+  })
+  assert.deepEqual(blocos.json(), [
+    {
+      tipo: "notas:0001",
+      revisao: 1,
+      nonce: "bm9uY2U=",
+      conteudo: "bm92bw==",
+    },
+  ])
+
+  const conflito = await api.inject({
+    method: "POST",
+    url: "/api/blocos/importacao",
+    headers,
+    payload: { revisoesEsperadas: {}, blocos: [] },
+  })
+  assert.equal(conflito.statusCode, 409)
+
+  await api.close()
+  banco.close()
+})
+
 test("ativa uma conta pendente sem receber a frase do cofre", async () => {
   const banco = abrirBanco(":memory:")
   const codigo = "CODIGO-ATIVACAO"
