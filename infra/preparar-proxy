@@ -1,0 +1,74 @@
+#!/bin/sh
+
+set -eu
+
+ORIGEM="/var/lib/jenkins/workspace/gestao-life"
+USUARIO_PROXY="${1:-proxyuser}"
+PORTA_PROXY="${2:-3128}"
+MODELO="$ORIGEM/infra/squid-gestaolife.conf"
+CONFIGURACAO="/etc/squid/squid.conf"
+SENHAS="/etc/squid/gestaolife.passwd"
+
+if [ "$(id -u)" -ne 0 ]; then
+  echo "Execute este arquivo com sudo." >&2
+  exit 1
+fi
+
+case "$USUARIO_PROXY" in
+  ""|*[!A-Za-z0-9_.-]*)
+    echo "O login do proxy deve conter apenas letras, números, ponto, hífen ou sublinhado." >&2
+    exit 1
+    ;;
+esac
+
+case "$PORTA_PROXY" in
+  ""|*[!0-9]*)
+    echo "A porta do proxy precisa ser numérica." >&2
+    exit 1
+    ;;
+esac
+
+if [ "$PORTA_PROXY" -lt 1024 ] || [ "$PORTA_PROXY" -gt 65535 ]; then
+  echo "Escolha uma porta entre 1024 e 65535." >&2
+  exit 1
+fi
+
+if [ ! -f "$MODELO" ]; then
+  echo "Configuração do proxy não encontrada em $MODELO." >&2
+  exit 1
+fi
+
+export DEBIAN_FRONTEND=noninteractive
+/usr/bin/apt-get update
+/usr/bin/apt-get install -y squid apache2-utils
+
+ARQUIVO_SENHAS_NOVO=$(/usr/bin/mktemp /etc/squid/gestaolife.passwd.novo.XXXXXX)
+CONFIGURACAO_NOVA=$(/usr/bin/mktemp /etc/squid/squid.conf.novo.XXXXXX)
+
+limpar_temporarios() {
+  /usr/bin/rm -f "$ARQUIVO_SENHAS_NOVO" "$CONFIGURACAO_NOVA"
+}
+trap limpar_temporarios EXIT HUP INT TERM
+
+echo "Defina agora a senha de $USUARIO_PROXY. Ela não será exibida nem salva no Git."
+/usr/bin/htpasswd -B -C 12 -c "$ARQUIVO_SENHAS_NOVO" "$USUARIO_PROXY"
+/usr/bin/sed "s/__PORTA__/$PORTA_PROXY/g" "$MODELO" > "$CONFIGURACAO_NOVA"
+
+if [ ! -f /etc/squid/squid.conf.antes-gestaolife ]; then
+  /usr/bin/cp --preserve=mode,ownership "$CONFIGURACAO" /etc/squid/squid.conf.antes-gestaolife
+fi
+
+/usr/bin/install -o proxy -g proxy -m 0640 "$ARQUIVO_SENHAS_NOVO" "$SENHAS"
+/usr/sbin/squid -k parse -f "$CONFIGURACAO_NOVA"
+/usr/bin/install -o root -g root -m 0644 "$CONFIGURACAO_NOVA" "$CONFIGURACAO"
+
+/usr/bin/systemctl enable squid
+/usr/bin/systemctl restart squid
+/usr/bin/systemctl is-active --quiet squid
+
+echo "Proxy configurado com sucesso."
+echo "Endereço: gestaolife.duckdns.org"
+echo "Porta: $PORTA_PROXY"
+echo "Login: $USUARIO_PROXY"
+echo "A senha é a que você acabou de definir."
+echo "Libere a porta no firewall somente para o IP da aplicação cliente."

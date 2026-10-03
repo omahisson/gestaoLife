@@ -50,3 +50,10 @@ Na conta administrativa, abra o perfil e mantenha pressionado por três segundos
 ## Diagnóstico pelo Jenkins
 
 O implantador testa `http://127.0.0.1:3001/api/saude`. Se a API falhar, as últimas linhas do serviço aparecem no console do build e a versão anterior do código é restaurada automaticamente.
+
+## Proxy para aplicações externas
+
+O proxy autenticado é opcional e independente do site, da API e do Jenkins.
+Sua preparação e operação estão documentadas em
+[`PROXY-AUTENTICADO.md`](./PROXY-AUTENTICADO.md). A senha é criada diretamente
+na VPS e nunca faz parte do repositório.

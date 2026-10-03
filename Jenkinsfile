@@ -33,6 +33,7 @@ pipeline {
 
     stage('Validar e compilar') {
       steps {
+        sh 'sh -n infra/deploy-gestaolife infra/preparar-v1 infra/preparar-proxy'
         sh 'npm run check'
       }
     }
